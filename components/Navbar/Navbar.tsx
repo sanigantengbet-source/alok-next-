@@ -21,6 +21,8 @@ import {
   Music,
   Compass,
   ArrowLeft,
+  Clock,
+  Trash2,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { NextTubeLogo } from './NextTubeLogo';
@@ -30,6 +32,10 @@ export const Navbar: React.FC = () => {
     toggleSidebar,
     searchQuery,
     setSearchQuery,
+    searchHistory,
+    addSearchHistory,
+    removeSearchHistory,
+    clearSearchHistory,
     setSelectedCategory,
     setCurrentView,
     activeVideo,
@@ -119,14 +125,20 @@ export const Navbar: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchInput.trim()) return;
-    setSearchQuery(searchInput.trim());
+  const executeSearch = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    addSearchHistory(trimmed);
+    setSearchQuery(trimmed);
     setSelectedCategory('All');
     setCurrentView('home');
     setIsSearchFocused(false);
     setIsMobileSearchOpen(false);
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSearch(searchInput);
   };
 
   const handleClearSearch = () => {
@@ -141,25 +153,30 @@ export const Navbar: React.FC = () => {
     setSelectedCategory('All');
   };
 
-  const recentSearches = ['Next.js 15 Full Course', 'React Hooks', 'CS50 AI', 'TypeScript Crash Course'];
+  // Determine list items to show:
+  // If searchInput has text and liveSuggestions are returned, show live suggestions.
+  // Otherwise, show saved searchHistory (or defaults if empty).
+  const displayedItems = searchInput.trim().length > 0 && liveSuggestions.length > 0
+    ? liveSuggestions
+    : searchHistory;
 
   return (
     <header className="sticky top-0 z-40 w-full h-14 bg-white/95 dark:bg-[#0f0f0f]/95 backdrop-blur-md border-b border-gray-200 dark:border-[#272727] px-2 sm:px-4 flex items-center justify-between transition-colors">
-      {/* MOBILE SEARCH OVERLAY (Full-width on small screens) */}
+      {/* MOBILE SEARCH OVERLAY (Full-width on small screens, exactly matching user screenshot design) */}
       {isMobileSearchOpen ? (
-        <div className="md:hidden absolute inset-0 z-50 bg-white dark:bg-[#0f0f0f] flex flex-col h-screen animate-in fade-in duration-150 shadow-md">
-          <div className="flex items-center px-2 gap-2 h-14 border-b border-gray-200 dark:border-[#272727]">
+        <div className="md:hidden absolute inset-0 z-50 bg-[#0f0f0f] text-white flex flex-col h-screen animate-in fade-in duration-150 shadow-md">
+          <div className="flex items-center px-3 gap-2 h-14 border-b border-[#222]">
             <button
               id="mobile-search-back-btn"
               onClick={() => setIsMobileSearchOpen(false)}
               aria-label="Back"
-              className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-700 dark:text-gray-200 shrink-0"
+              className="p-2 rounded-full hover:bg-[#222] text-white shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
 
             <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center">
-              <div className="flex items-center flex-1 h-10 px-3 bg-gray-100 dark:bg-[#1f1f1f] rounded-full border border-gray-300 dark:border-[#333]">
+              <div className="flex items-center flex-1 h-10 px-3 bg-[#1e1e1e] rounded-full border border-[#333]">
                 <input
                   ref={mobileInputRef}
                   id="navbar-mobile-search-input"
@@ -167,14 +184,14 @@ export const Navbar: React.FC = () => {
                   placeholder="Search any YouTube video..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  className="w-full bg-transparent text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:outline-hidden"
+                  className="w-full bg-transparent text-sm text-white placeholder-gray-400 focus:outline-none"
                 />
                 {searchInput && (
                   <button
                     type="button"
                     id="navbar-clear-mobile-search-btn"
                     onClick={handleClearSearch}
-                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    className="p-1 text-gray-400 hover:text-white"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -189,31 +206,66 @@ export const Navbar: React.FC = () => {
                 setIsVoiceModalOpen(true);
               }}
               aria-label="Search with voice"
-              className="p-2.5 rounded-full bg-gray-100 dark:bg-[#222] text-gray-700 dark:text-gray-200 shrink-0"
+              className="p-2.5 rounded-full bg-[#1e1e1e] text-white hover:bg-[#2a2a2a] shrink-0"
             >
               <Mic className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Mobile Live Suggestions List */}
-          <div className="flex-1 overflow-y-auto py-2">
-            {(liveSuggestions.length > 0 ? liveSuggestions : recentSearches).map((item, idx) => (
-              <button
-                key={`mob-sug-${idx}`}
-                type="button"
-                onClick={() => {
-                  setSearchInput(item);
-                  setSearchQuery(item);
-                  setSelectedCategory('All');
-                  setCurrentView('home');
-                  setIsMobileSearchOpen(false);
-                }}
-                className="w-full px-4 py-3 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#222] flex items-center gap-3 border-b border-gray-100 dark:border-[#1a1a1a]"
-              >
-                <Search className="w-4 h-4 text-gray-400 shrink-0" />
-                <span className="truncate">{item}</span>
-              </button>
-            ))}
+          {/* Search History / Live Suggestions List */}
+          <div className="flex-1 overflow-y-auto py-1">
+            {searchInput.trim().length === 0 && searchHistory.length > 0 && (
+              <div className="px-4 py-2 flex items-center justify-between text-xs text-gray-400">
+                <span className="font-medium">Recent Searches</span>
+                <button
+                  type="button"
+                  onClick={clearSearchHistory}
+                  className="text-xs text-red-400 hover:text-red-300 font-semibold"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
+
+            {displayedItems.map((item, idx) => {
+              const isHistoryItem = searchInput.trim().length === 0;
+              return (
+                <div
+                  key={`mob-sug-${idx}`}
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#1f1f1f] text-sm text-gray-200 transition-colors border-b border-[#181818]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput(item);
+                      executeSearch(item);
+                    }}
+                    className="flex-1 flex items-center gap-4 text-left truncate"
+                  >
+                    {isHistoryItem ? (
+                      <Clock className="w-4 h-4 text-gray-400 shrink-0" />
+                    ) : (
+                      <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                    )}
+                    <span className="truncate text-white font-normal">{item}</span>
+                  </button>
+
+                  {isHistoryItem && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSearchHistory(item);
+                      }}
+                      title="Remove from history"
+                      className="p-1 text-gray-500 hover:text-gray-300"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -296,30 +348,71 @@ export const Navbar: React.FC = () => {
           <Mic className="w-4 h-4" />
         </button>
 
-        {/* Search Recommendations Dropdown */}
+        {/* Search Recommendations / History Dropdown */}
         {isSearchFocused && (
-          <div className="absolute top-12 left-0 right-14 bg-white dark:bg-[#212121] rounded-2xl shadow-xl border border-gray-200 dark:border-[#383838] py-2 z-50">
-            <p className="px-4 py-1 text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-              {liveSuggestions.length > 0 ? 'YouTube Suggestions' : 'Popular Searches'}
-            </p>
-            {(liveSuggestions.length > 0 ? liveSuggestions : recentSearches).map((item, idx) => (
-              <button
-                key={`desk-sug-${idx}`}
-                id={`search-rec-${item.replace(/\s+/g, '-').toLowerCase()}`}
-                type="button"
-                onMouseDown={() => {
-                  setSearchInput(item);
-                  setSearchQuery(item);
-                  setSelectedCategory('All');
-                  setCurrentView('home');
-                  setIsSearchFocused(false);
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#303030] flex items-center gap-3 transition-colors"
-              >
-                <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span className="truncate">{item}</span>
-              </button>
-            ))}
+          <div className="absolute top-12 left-0 right-14 bg-white dark:bg-[#212121] rounded-2xl shadow-xl border border-gray-200 dark:border-[#383838] py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+            <div className="px-4 py-1.5 flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                {searchInput.trim().length > 0 && liveSuggestions.length > 0
+                  ? 'YouTube Suggestions'
+                  : 'Search History'}
+              </span>
+              {searchInput.trim().length === 0 && searchHistory.length > 0 && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    clearSearchHistory();
+                  }}
+                  className="text-[11px] text-red-500 hover:text-red-600 font-medium"
+                >
+                  Clear History
+                </button>
+              )}
+            </div>
+
+            {displayedItems.map((item, idx) => {
+              const isHistoryItem = searchInput.trim().length === 0;
+              return (
+                <div
+                  key={`desk-sug-${idx}`}
+                  className="w-full px-4 py-2 hover:bg-gray-100 dark:hover:bg-[#303030] flex items-center justify-between text-sm text-gray-800 dark:text-gray-200 transition-colors group"
+                >
+                  <button
+                    id={`search-rec-${item.replace(/\s+/g, '-').toLowerCase()}`}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setSearchInput(item);
+                      executeSearch(item);
+                    }}
+                    className="flex-1 flex items-center gap-3 text-left truncate"
+                  >
+                    {isHistoryItem ? (
+                      <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    ) : (
+                      <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    )}
+                    <span className="truncate">{item}</span>
+                  </button>
+
+                  {isHistoryItem && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeSearchHistory(item);
+                      }}
+                      title="Remove from history"
+                      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
