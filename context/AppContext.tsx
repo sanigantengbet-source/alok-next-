@@ -56,7 +56,8 @@ interface AppContextType {
 
   activeChannel: Channel | null;
   setActiveChannel: (channel: Channel | null) => void;
-  openChannel: (channelOrTitle: Channel | string, fallbackAvatar?: string) => void;
+  openChannel: (channelOrTitle: Channel | string, fallbackAvatar?: string, channelId?: string, handle?: string) => void;
+  updateChannelInState: (updated: Channel) => void;
   minimizeWatchToPopUp: () => void;
 
   selectedCategory: string;
@@ -584,13 +585,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleSubscribe = (channelId: string) => {
+    if (!channelId) return;
     setSubscribedChannelIds((prev) => {
       const exists = prev.includes(channelId);
-      if (exists) {
-        return prev.filter((id) => id !== channelId);
-      } else {
-        return [...prev, channelId];
+      const next = exists ? prev.filter((id) => id !== channelId) : [...prev, channelId];
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('nexttube_subscriptions', JSON.stringify(next));
+        } catch {}
       }
+      return next;
+    });
+
+    setChannels((prev) =>
+      prev.map((c) => (c.id === channelId ? { ...c, isSubscribed: !c.isSubscribed } : c))
+    );
+
+    setActiveChannel((prev) => {
+      if (prev && prev.id === channelId) {
+        return { ...prev, isSubscribed: !prev.isSubscribed };
+      }
+      return prev;
     });
   };
 
@@ -673,35 +688,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const updateChannelInState = useCallback((updated: Channel) => {
+    if (!updated || !updated.id) return;
+    setChannels((prev) => {
+      const index = prev.findIndex((c) => c.id === updated.id || c.title.toLowerCase() === updated.title.toLowerCase());
+      if (index >= 0) {
+        const next = [...prev];
+        next[index] = { ...next[index], ...updated };
+        return next;
+      }
+      return [updated, ...prev];
+    });
+
+    setActiveChannel((prev) => {
+      if (prev && (prev.id === updated.id || prev.title.toLowerCase() === updated.title.toLowerCase())) {
+        return { ...prev, ...updated };
+      }
+      return prev;
+    });
+  }, []);
+
   const openChannel = useCallback(
-    (channelOrTitle: Channel | string, fallbackAvatar?: string) => {
+    (
+      channelOrTitle: Channel | string,
+      fallbackAvatar?: string,
+      channelId?: string,
+      handle?: string
+    ) => {
       let matchedChannel: Channel | null = null;
       if (typeof channelOrTitle === 'object' && channelOrTitle !== null) {
         matchedChannel = channelOrTitle;
       } else {
         const titleOrId = String(channelOrTitle).trim();
+        const candidateId = channelId || (titleOrId.startsWith('c-') || titleOrId.startsWith('UC') ? titleOrId : '');
+        
         matchedChannel =
           channels.find(
             (c) =>
+              (candidateId && c.id === candidateId) ||
               c.id === titleOrId ||
               c.title.toLowerCase() === titleOrId.toLowerCase() ||
-              (c.handle && c.handle.toLowerCase() === titleOrId.toLowerCase())
+              (c.handle && c.handle.toLowerCase() === titleOrId.toLowerCase()) ||
+              (handle && c.handle && c.handle.toLowerCase() === handle.toLowerCase())
           ) || null;
 
         if (!matchedChannel) {
           const cleanTitle = titleOrId.replace(/^c-/, '');
-          const handle = `@${cleanTitle.replace(/\s+/g, '').toLowerCase()}`;
+          const finalHandle = handle || `@${cleanTitle.replace(/\s+/g, '').toLowerCase()}`;
+          const finalId = channelId || `c-${cleanTitle.replace(/\s+/g, '-').toLowerCase()}`;
+          
           matchedChannel = {
-            id: `c-${cleanTitle.replace(/\s+/g, '-').toLowerCase()}`,
+            id: finalId,
             title: cleanTitle,
             avatar:
               fallbackAvatar ||
               `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanTitle)}&backgroundColor=e11d48,2563eb,d97706`,
-            banner: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80`,
-            handle,
+            banner: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=2560&auto=format&fit=crop&q=80`,
+            handle: finalHandle,
             subscribers: '120K+',
             verified: true,
-            isSubscribed: false,
+            isSubscribed: subscribedChannelIds.includes(finalId),
             videosCount: 45,
             description: `Official NextTube channel for ${cleanTitle}. Explore exclusive videos, tutorials, and content.`,
             joinedDate: 'Joined recently',
@@ -711,12 +757,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
+      // Sync subscribed state with subscribedChannelIds
+      if (matchedChannel) {
+        matchedChannel = {
+          ...matchedChannel,
+          isSubscribed: subscribedChannelIds.includes(matchedChannel.id),
+        };
+      }
+
       setActiveChannel(matchedChannel);
       setPreviousView(currentView);
       setCurrentView('channel');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
-    [channels, currentView]
+    [channels, currentView, subscribedChannelIds]
   );
 
   const minimizeWatchToPopUp = useCallback(() => {
@@ -768,6 +822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeChannel,
         setActiveChannel,
         openChannel,
+        updateChannelInState,
         minimizeWatchToPopUp,
         selectedCategory,
         setSelectedCategory,
