@@ -4,6 +4,7 @@ import React from 'react';
 import {
   Home,
   Flame,
+  Tv,
   Settings,
   History,
   Clock,
@@ -101,6 +102,26 @@ export const Sidebar: React.FC = () => {
         </button>
 
         <button
+          id="sidebar-nav-subscriptions"
+          onClick={() => handleNavClick('subscriptions')}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+            currentView === 'subscriptions'
+              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white font-semibold'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f]'
+          }`}
+        >
+          <div className="flex items-center gap-4 min-w-0">
+            <Tv className="w-5 h-5 shrink-0 text-blue-500" />
+            <span className="truncate">Langganan</span>
+          </div>
+          {subscribedChannelIds.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold shrink-0">
+              {subscribedChannelIds.length}
+            </span>
+          )}
+        </button>
+
+        <button
           id="sidebar-nav-trending"
           onClick={() => handleNavClick('trending')}
           className={`w-full flex items-center gap-4 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
@@ -138,12 +159,12 @@ export const Sidebar: React.FC = () => {
           onClick={() => handleNavClick('history')}
           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
             currentView === 'history'
-              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white'
+              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white font-semibold'
               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f]'
           }`}
         >
           <div className="flex items-center gap-4 min-w-0">
-            <History className="w-5 h-5 shrink-0" />
+            <History className="w-5 h-5 shrink-0 text-amber-500" />
             <span className="truncate">History</span>
           </div>
           <span className="text-xs text-gray-400 font-mono shrink-0">{historyVideoIds.length}</span>
@@ -154,12 +175,12 @@ export const Sidebar: React.FC = () => {
           onClick={() => handleNavClick('watchLater')}
           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
             currentView === 'watchLater'
-              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white'
+              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white font-semibold'
               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f]'
           }`}
         >
           <div className="flex items-center gap-4 min-w-0">
-            <Clock className="w-5 h-5 shrink-0" />
+            <Clock className="w-5 h-5 shrink-0 text-emerald-500" />
             <span className="truncate">Watch Later</span>
           </div>
           <span className="text-xs text-gray-400 font-mono shrink-0">{watchLaterIds.length}</span>
@@ -170,19 +191,63 @@ export const Sidebar: React.FC = () => {
           onClick={() => handleNavClick('liked')}
           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
             currentView === 'liked'
-              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white'
+              ? 'bg-gray-100 dark:bg-[#272727] text-gray-900 dark:text-white font-semibold'
               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f]'
           }`}
         >
           <div className="flex items-center gap-4 min-w-0">
-            <ThumbsUp className="w-5 h-5 shrink-0" />
+            <ThumbsUp className="w-5 h-5 shrink-0 text-rose-500" />
             <span className="truncate">Liked Videos</span>
           </div>
           <span className="text-xs text-gray-400 font-mono shrink-0">{likedVideoIds.length}</span>
         </button>
       </div>
 
-      {/* SECTION 3: EXPLORE CATEGORIES */}
+      {/* SECTION 3: SUBSCRIPTIONS CHANNELS LIST */}
+      <div className="pt-3 pb-3 border-b border-gray-200 dark:border-[#272727]">
+        <div className="flex items-center justify-between px-3 mb-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Langganan
+          </h4>
+          <button
+            onClick={() => handleNavClick('subscriptions')}
+            className="text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline"
+          >
+            Lihat Semua
+          </button>
+        </div>
+
+        <div className="space-y-1">
+          {channels.slice(0, 7).map((c) => {
+            const isSubbed = subscribedChannelIds.includes(c.id);
+            return (
+              <button
+                key={c.id}
+                id={`sidebar-channel-${c.id}`}
+                onClick={() => openChannel(c)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f] transition-colors text-left"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.avatar}
+                  alt={c.title}
+                  className="w-6 h-6 rounded-full object-cover shrink-0 border border-gray-200 dark:border-[#383838]"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.title)}&backgroundColor=e11d48,2563eb`;
+                  }}
+                />
+                <span className="truncate flex-1">{c.title}</span>
+                {isSubbed && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SECTION 4: EXPLORE CATEGORIES */}
       <div className="pt-3 pb-3 border-b border-gray-200 dark:border-[#272727]">
         <h4 className="px-3 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
           Explore Topics
@@ -207,37 +272,6 @@ export const Sidebar: React.FC = () => {
             >
               <cat.icon className="w-4 h-4 text-gray-500 shrink-0" />
               <span className="truncate">{cat.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* SECTION 4: SUBSCRIPTIONS & CHANNELS */}
-      <div className="pt-3 pb-3 border-b border-gray-200 dark:border-[#272727]">
-        <h4 className="px-3 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-          Subscriptions
-        </h4>
-        <div className="space-y-1">
-          {channels.slice(0, 6).map((c) => (
-            <button
-              key={c.id}
-              id={`sidebar-channel-${c.id}`}
-              onClick={() => openChannel(c)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f] transition-colors text-left"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={c.avatar}
-                alt={c.title}
-                className="w-6 h-6 rounded-full object-cover shrink-0 border border-gray-200 dark:border-[#383838]"
-                onError={(e) => {
-                  e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.title)}&backgroundColor=e11d48,2563eb`;
-                }}
-              />
-              <span className="truncate flex-1">{c.title}</span>
-              {subscribedChannelIds.includes(c.id) && (
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-              )}
             </button>
           ))}
         </div>
@@ -270,7 +304,7 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* MOBILE DRAWER (when isSidebarOpen is toggled on mobile) */}
+      {/* MOBILE DRAWER */}
       {isSidebarOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           {/* Backdrop */}
@@ -285,9 +319,12 @@ export const Sidebar: React.FC = () => {
             {/* Header with Close and Logo */}
             <div className="flex items-center justify-between pb-3 mb-2 px-1 border-b border-gray-200 dark:border-[#272727]">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-5.5 bg-red-600 rounded-lg flex items-center justify-center shadow-xs">
-                  <div className="w-0 h-0 border-y-[3.5px] border-y-transparent border-l-[7px] border-l-white ml-0.5" />
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/icon-192.png"
+                  alt="NextTube"
+                  className="w-7 h-7 rounded-lg object-contain shadow-xs"
+                />
                 <span className="font-bold text-base tracking-tighter text-gray-900 dark:text-white">
                   NextTube
                 </span>
@@ -316,6 +353,7 @@ export const Sidebar: React.FC = () => {
           {[
             { icon: Home, label: 'Home', view: 'home' as PageView },
             { customIcon: ShortsNavIcon, label: 'Shorts', view: 'shorts' as PageView },
+            { icon: Tv, label: 'Langganan', view: 'subscriptions' as PageView },
             { icon: Flame, label: 'Trending', view: 'trending' as PageView },
             { icon: Settings, label: 'Settings', view: 'settings' as PageView },
           ].map((item) => {
