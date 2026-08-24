@@ -272,7 +272,10 @@ export const Sidebar: React.FC = () => {
           />
 
           {/* Slide-in Drawer Container */}
-          <aside className="relative w-72 max-w-[80vw] h-full bg-white dark:bg-[#0f0f0f] border-r border-gray-200 dark:border-[#272727] py-3 px-3 overflow-y-auto select-none z-50 flex flex-col shadow-2xl animate-in slide-in-from-left duration-250">
+          <aside
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            className="relative w-72 max-w-[80vw] h-full bg-white dark:bg-[#0f0f0f] border-r border-gray-200 dark:border-[#272727] py-3 px-3 overflow-y-auto select-none z-50 flex flex-col shadow-2xl animate-in slide-in-from-left duration-250 [&::-webkit-scrollbar]:hidden"
+          >
             {/* Header with Close and Logo */}
             <div className="flex items-center justify-between pb-3 mb-2 px-1 border-b border-gray-200 dark:border-[#272727]">
               <NextTubeLogo size="sm" showText={true} />
@@ -286,7 +289,11 @@ export const Sidebar: React.FC = () => {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto" onClick={() => toggleSidebar()}>
+            <div
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+              onClick={() => toggleSidebar()}
+            >
               {sidebarContent}
             </div>
           </aside>
@@ -333,7 +340,10 @@ export const Sidebar: React.FC = () => {
         </aside>
       ) : (
         /* FULL DESKTOP SIDEBAR */
-        <aside className="hidden md:block w-60 shrink-0 h-[calc(100vh-3.5rem)] overflow-y-auto bg-white dark:bg-[#0f0f0f] border-r border-gray-200 dark:border-[#272727] py-3 px-2 select-none z-30 custom-scrollbar">
+        <aside
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          className="hidden md:block w-60 shrink-0 h-[calc(100vh-3.5rem)] overflow-y-auto bg-white dark:bg-[#0f0f0f] border-r border-gray-200 dark:border-[#272727] py-3 px-2 select-none z-30 [&::-webkit-scrollbar]:hidden"
+        >
           {sidebarContent}
         </aside>
       )}
