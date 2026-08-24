@@ -423,48 +423,64 @@ export const WatchPage: React.FC = () => {
           {/* Description Card */}
           <div
             id="watch-video-description-card"
-            className="mt-4 p-4 rounded-2xl bg-gray-100 dark:bg-[#202020] text-xs sm:text-sm text-gray-800 dark:text-gray-200 transition-all cursor-pointer hover:bg-gray-200/70 dark:hover:bg-[#262626]"
+            className="mt-4 p-4 rounded-2xl bg-gray-100/90 dark:bg-[#181818] border border-gray-200/70 dark:border-[#262626] text-xs sm:text-sm text-gray-800 dark:text-gray-200 transition-all cursor-pointer hover:bg-gray-100 dark:hover:bg-[#1d1d1d] shadow-xs"
             onClick={() => setIsDescExpanded(!isDescExpanded)}
           >
-            <div className="flex items-center gap-2 font-bold text-gray-900 dark:text-white mb-2">
+            <div className="flex items-center gap-2 font-bold text-gray-900 dark:text-white mb-2.5 flex-wrap">
               <span>{formatViews(displayViews)} views</span>
-              <span>•</span>
+              <span className="text-gray-400 dark:text-gray-500">•</span>
               <span>{displayUploadedAt}</span>
-              <span className="px-2 py-0.5 bg-gray-200 dark:bg-[#303030] rounded-md text-xs font-mono">
-                #{activeVideo.category}
-              </span>
+              {activeVideo.category && (
+                <span className="px-2 py-0.5 bg-gray-200 dark:bg-[#282828] text-gray-700 dark:text-gray-300 rounded-md text-xs font-medium">
+                  {activeVideo.category}
+                </span>
+              )}
             </div>
 
-            <p className={`whitespace-pre-line leading-relaxed ${isDescExpanded ? '' : 'line-clamp-3'}`}>
-              {displayDescription}
-            </p>
+            <div className={`leading-relaxed whitespace-pre-line break-words text-gray-700 dark:text-gray-300 ${isDescExpanded ? '' : 'line-clamp-3'}`}>
+              {displayDescription || 'Tidak ada deskripsi video.'}
+            </div>
 
             {/* Tags */}
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {activeVideo.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  #{tag.replace(/\s+/g, '')}
-                </span>
-              ))}
-            </div>
+            {activeVideo.tags && activeVideo.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-gray-200/60 dark:border-[#262626]">
+                {activeVideo.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    #{tag.replace(/\s+/g, '')}
+                  </span>
+                ))}
+              </div>
+            )}
 
-            <button
-              id="watch-toggle-desc-btn"
-              className="mt-2 text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-1"
-            >
-              {isDescExpanded ? (
-                <>
-                  Show less <ChevronUp className="w-3.5 h-3.5" />
-                </>
-              ) : (
-                <>
-                  ...more <ChevronDown className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
+            <div className="mt-3 flex items-center justify-between pt-1">
+              <button
+                id="watch-toggle-desc-btn"
+                type="button"
+                className="text-xs font-bold text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDescExpanded(!isDescExpanded);
+                }}
+              >
+                {isDescExpanded ? (
+                  <>
+                    <span>Tampilkan lebih sedikit</span>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <span>Tampilkan lebih banyak</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Comments Section Component */}
