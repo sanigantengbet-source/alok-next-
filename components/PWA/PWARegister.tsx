@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
+import { NextTubeLogo } from '@/components/Navbar/NextTubeLogo';
 
 export const PWARegister = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -54,12 +55,7 @@ export const PWARegister = () => {
       className="fixed bottom-16 sm:bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-50 max-w-sm bg-white dark:bg-[#1f1f1f] p-3.5 rounded-2xl shadow-2xl border border-gray-200 dark:border-[#383838] flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-300"
     >
       <div className="flex items-center gap-3 min-w-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/icon-192.png"
-          alt="NextTube App Icon"
-          className="w-10 h-10 rounded-xl object-contain shadow-sm shrink-0"
-        />
+        <NextTubeLogo size="sm" showText={false} />
         <div className="min-w-0">
           <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate">Install NextTube</h4>
           <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Add to Home screen for best experience</p>
