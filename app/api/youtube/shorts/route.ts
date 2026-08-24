@@ -5,7 +5,10 @@ import { INITIAL_SHORTS } from '@/data/shorts';
 // Helper to scrape shorts directly from YouTube HTML ytInitialData
 async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
   try {
-    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    const searchUrl = query.startsWith('http')
+      ? query
+      : `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+
     const res = await fetch(searchUrl, {
       headers: {
         'User-Agent':
@@ -42,10 +45,10 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
           seen.add(videoId);
           const accessibilityText = s.accessibilityText || '';
           const parts = accessibilityText.split(',');
-          const title = parts[0]?.trim() || s.overlayMetadata?.primaryText?.content || 'Viral YouTube Short';
-          const viewsText = parts[1]?.replace('– play Short', '').trim() || s.overlayMetadata?.secondaryText?.content || '500K views';
+          const title = parts[0]?.trim() || s.overlayMetadata?.primaryText?.content || 'Viral Trending YouTube Short';
+          const viewsText = parts[1]?.replace('– play Short', '').trim() || s.overlayMetadata?.secondaryText?.content || '850K views';
 
-          let numericViews = 450000;
+          let numericViews = 850000;
           if (viewsText.toLowerCase().includes('m')) {
             numericViews = parseFloat(viewsText) * 1000000;
           } else if (viewsText.toLowerCase().includes('k') || viewsText.toLowerCase().includes('thousand')) {
@@ -56,21 +59,21 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
             id: `short-yt-${videoId}`,
             youtubeId: videoId,
             title: title,
-            description: `Viral YouTube Short: ${title}`,
-            channelTitle: 'Viral Shorts Creator',
+            description: `Trending YouTube Short: ${title}`,
+            channelTitle: 'Trending Creator',
             channelId: `c-${videoId}`,
             channelAvatar: `https://picsum.photos/seed/${videoId}/100/100`,
             subscriberCount: '500K+',
             verified: true,
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: Math.round(numericViews) || 350000,
-            likes: Math.floor(numericViews * 0.08) || 28000,
+            views: Math.round(numericViews) || 750000,
+            likes: Math.floor(numericViews * 0.09) || 48000,
             dislikes: 35,
             uploadedAt: 'Trending',
             duration: '0:50',
             category: 'Shorts',
             tags: ['Shorts', 'Viral', 'Trending'],
-            commentsCount: Math.floor(numericViews * 0.004) || 680,
+            commentsCount: Math.floor(numericViews * 0.004) || 980,
           });
         }
       }
@@ -87,20 +90,20 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
             youtubeId: videoId,
             title,
             description: `YouTube Short: ${title}`,
-            channelTitle: r.ownerText?.runs?.[0]?.text || 'Creator',
+            channelTitle: r.ownerText?.runs?.[0]?.text || 'Trending Creator',
             channelId: `c-${videoId}`,
             channelAvatar: `https://picsum.photos/seed/${videoId}/100/100`,
-            subscriberCount: '250K',
+            subscriberCount: '500K',
             verified: true,
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: 320000,
-            likes: 24000,
+            views: 920000,
+            likes: 64000,
             dislikes: 18,
             uploadedAt: 'Trending',
             duration: '0:45',
             category: 'Shorts',
-            tags: ['Shorts', 'Viral'],
-            commentsCount: 420,
+            tags: ['Shorts', 'Viral', 'Trending'],
+            commentsCount: 620,
           });
         }
       }
@@ -118,24 +121,24 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
           results.push({
             id: `short-yt-${videoId}`,
             youtubeId: videoId,
-            title: title || 'YouTube Short',
-            description: `YouTube Short: ${title}`,
+            title: title || 'Trending Short',
+            description: `Trending Short: ${title}`,
             channelTitle: v.ownerText?.runs?.[0]?.text || 'Creator',
             channelId: `c-${videoId}`,
             channelAvatar:
               v.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url ||
               `https://picsum.photos/seed/${videoId}/100/100`,
-            subscriberCount: '100K+',
+            subscriberCount: '250K+',
             verified: Boolean(v.ownerBadges?.length),
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: 280000,
-            likes: 21000,
+            views: 680000,
+            likes: 51000,
             dislikes: 12,
-            uploadedAt: v.publishedTimeText?.simpleText || 'Recently',
+            uploadedAt: v.publishedTimeText?.simpleText || 'Trending Now',
             duration: duration || '0:50',
             category: 'Shorts',
-            tags: ['Shorts', 'Video'],
-            commentsCount: 310,
+            tags: ['Shorts', 'Viral', 'Trending'],
+            commentsCount: 510,
           });
         }
       }
@@ -155,9 +158,9 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get('q') || '#shorts viral trending';
+  const q = searchParams.get('q') || '#shorts trending viral';
 
-  // 1. Primary: Direct YouTube Scraper (handles modern shortsLockupViewModel & reelItemRenderer)
+  // 1. Primary: Scrape YouTube search for trending shorts
   try {
     const scraped = await scrapeShortsFromYouTube(q);
     if (scraped && scraped.length > 0) {
@@ -167,9 +170,19 @@ export async function GET(req: NextRequest) {
     console.warn('Scraping error:', e);
   }
 
-  // 2. Secondary fallback: youtube-sr search
+  // 1b. Try Trending Feed directly
   try {
-    const results = await YouTube.search(q, {
+    const trendingScraped = await scrapeShortsFromYouTube('https://www.youtube.com/feed/trending');
+    if (trendingScraped && trendingScraped.length > 0) {
+      return NextResponse.json({ results: trendingScraped, count: trendingScraped.length });
+    }
+  } catch (e) {
+    console.warn('Trending feed scraping notice:', e);
+  }
+
+  // 2. Secondary fallback: youtube-sr search for trending shorts
+  try {
+    const results = await YouTube.search(`${q} #shorts`, {
       limit: 25,
       type: 'video',
     });
@@ -186,23 +199,23 @@ export async function GET(req: NextRequest) {
           id: `short-yt-${videoId}`,
           youtubeId: videoId,
           title: item.title,
-          description: item.description || `YouTube Short: ${item.title}`,
-          channelTitle: item.channel?.name || 'Creator',
+          description: item.description || `Trending Short: ${item.title}`,
+          channelTitle: item.channel?.name || 'Trending Creator',
           channelId: item.channel?.id || `c-${item.channel?.name?.replace(/\s+/g, '-').toLowerCase() || videoId}`,
           channelAvatar:
             item.channel?.icon?.url ||
             `https://picsum.photos/seed/${encodeURIComponent(item.channel?.name || videoId || 'shortcreator')}/100/100`,
-          subscriberCount: item.channel?.subscribers || '500K',
+          subscriberCount: item.channel?.subscribers || '750K',
           verified: Boolean(item.channel?.verified),
           thumbnailUrl: thumb,
-          views: typeof item.views === 'number' ? item.views : 320000,
-          likes: Math.floor((item.views || 100000) * 0.08) || 12000,
+          views: typeof item.views === 'number' ? item.views : 650000,
+          likes: Math.floor((item.views || 250000) * 0.08) || 24000,
           dislikes: 24,
           uploadedAt: item.uploadedAt || 'Trending',
           duration: item.durationFormatted || '0:50',
           category: 'Shorts',
-          tags: ['Shorts', 'Viral', item.channel?.name || 'Trending'],
-          commentsCount: Math.floor((item.views || 100000) * 0.005) || 350,
+          tags: ['Shorts', 'Viral', 'Trending'],
+          commentsCount: Math.floor((item.views || 250000) * 0.005) || 750,
         };
       });
 
@@ -216,4 +229,3 @@ export async function GET(req: NextRequest) {
   // 3. Guaranteed Fallback: Curated active Shorts dataset
   return NextResponse.json({ results: INITIAL_SHORTS, count: INITIAL_SHORTS.length });
 }
-
