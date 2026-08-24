@@ -47,10 +47,35 @@ export const SubscriptionsView: React.FC = () => {
   const [dynamicChannelVideos, setDynamicChannelVideos] = useState<Video[]>([]);
   const [isLoadingDynamic, setIsLoadingDynamic] = useState<boolean>(false);
 
-  // Subscribed channels list
+  // Subscribed channels list with robust fallback resolution
   const subscribedChannels = useMemo(() => {
-    return channels.filter((c) => subscribedChannelIds.includes(c.id));
-  }, [channels, subscribedChannelIds]);
+    return subscribedChannelIds.map((id) => {
+      const found = channels.find((c) => c.id === id || c.title.toLowerCase() === id.toLowerCase());
+      if (found) return found;
+
+      const matchVid = videos.find(
+        (v) => v.channelId === id || v.channelTitle.toLowerCase() === id.toLowerCase()
+      );
+      const cleanTitle = matchVid?.channelTitle || id.replace(/^c-/, '');
+
+      return {
+        id,
+        title: cleanTitle,
+        avatar:
+          matchVid?.channelAvatar ||
+          `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanTitle)}&backgroundColor=e11d48,2563eb,d97706`,
+        banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=2560&auto=format&fit=crop&q=80',
+        handle: `@${cleanTitle.replace(/\s+/g, '').toLowerCase()}`,
+        subscribers: matchVid?.subscriberCount || '100K+',
+        verified: matchVid?.verified ?? true,
+        isSubscribed: true,
+        videosCount: 20,
+        description: `Official NextTube channel for ${cleanTitle}.`,
+        joinedDate: 'Joined recently',
+        viewsCount: '1.2M views',
+      };
+    });
+  }, [channels, subscribedChannelIds, videos]);
 
   const selectedChannelObj = useMemo(() => {
     if (!selectedChannelFilter) return null;
