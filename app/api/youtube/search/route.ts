@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YouTube from 'youtube-sr';
 import { parseYouTubeViews } from '@/lib/youtube-views';
+import { isFreshAndHotVideo, filterFreshVideos } from '@/lib/video-freshness';
 
 // Helper to extract YouTube video ID if user searched a URL directly
 function extractYouTubeVideoId(input: string): string | null {
@@ -54,9 +55,9 @@ async function searchViaYouTubeHTML(query: string, limit = 20) {
 
     const results: any[] = [];
 
-    for (const item of contents) {
+    for (const rawItem of (contents as any[])) {
       if (results.length >= limit) break;
-      const video = item.videoRenderer;
+      const video: any = rawItem?.videoRenderer;
       if (!video || !video.videoId) continue;
 
       const title = video.title?.runs?.[0]?.text || 'YouTube Video';
@@ -80,7 +81,7 @@ async function searchViaYouTubeHTML(query: string, limit = 20) {
 
       const numericViews = parseYouTubeViews(video.viewCountText, video.shortViewCountText, 45000);
 
-      results.push({
+      const videoItem = {
         id: `yt-${video.videoId}`,
         youtubeId: video.videoId,
         title,
@@ -101,7 +102,11 @@ async function searchViaYouTubeHTML(query: string, limit = 20) {
         category: 'YouTube Search',
         tags: [channelTitle, 'Video'],
         commentsCount: Math.round(numericViews * 0.002) || 85,
-      });
+      };
+
+      if (isFreshAndHotVideo(videoItem)) {
+        results.push(videoItem);
+      }
     }
 
     return results;
@@ -207,7 +212,8 @@ export async function GET(req: NextRequest) {
             tags: [item.channel?.name || 'YouTube', 'Video'],
             commentsCount: Math.floor((item.views || 40000) * 0.002) || 45,
           };
-        });
+        })
+        .filter(isFreshAndHotVideo);
 
       if (formatted.length > 0) {
         return NextResponse.json({ results: formatted });
