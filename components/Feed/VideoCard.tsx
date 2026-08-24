@@ -49,6 +49,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
           alt={displayTitle || video.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           loading="lazy"
+          referrerPolicy="no-referrer"
           onError={(e) => {
             const target = e.currentTarget;
             if (target.src !== video.thumbnailUrl && video.thumbnailUrl) {
@@ -121,6 +122,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
             src={video.channelAvatar}
             alt={video.channelTitle}
             className="w-9 h-9 rounded-full object-cover border border-gray-200 dark:border-[#333] hover:opacity-80 transition-opacity"
+            referrerPolicy="no-referrer"
             onError={(e) => {
               e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(video.channelTitle || 'YT')}&backgroundColor=e11d48,2563eb,d97706`;
             }}
