@@ -13,13 +13,22 @@ import {
   ChevronUp,
   ChevronDown,
   Play,
-  Pause,
   Music2,
   Sparkles,
   CheckCircle2,
+  Flame,
+  RefreshCw,
 } from 'lucide-react';
 import Image from 'next/image';
 import { ShortsCommentsModal } from './ShortsCommentsModal';
+
+const TRENDING_QUERIES = [
+  '#shorts viral trending',
+  '#shorts fyp viral 2026',
+  '#shorts trending indonesia',
+  '#shorts tiktok viral trending',
+  '#shorts popular trending',
+];
 
 export const ShortsView: React.FC = () => {
   const {
@@ -32,7 +41,6 @@ export const ShortsView: React.FC = () => {
     subscribedChannelIds,
     toggleSubscribe,
     setShareModalVideo,
-    playVideoById,
     openChannel,
   } = useApp();
 
@@ -40,7 +48,8 @@ export const ShortsView: React.FC = () => {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [activeCommentsShort, setActiveCommentsShort] = useState<Video | null>(null);
-
+  const isAutoFetchingRef = useRef<boolean>(false);
+  const queryRotationIndexRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -81,10 +90,18 @@ export const ShortsView: React.FC = () => {
     };
   }, [shorts]);
 
-  // Fetch more shorts when reaching near end
+  // Real-time automatic recommendation: fetch next trending batch when approaching end of feed
   useEffect(() => {
-    if (activeIndex >= shorts.length - 2 && shorts.length > 0) {
-      fetchShorts();
+    if (activeIndex >= shorts.length - 3 && shorts.length > 0 && !isAutoFetchingRef.current) {
+      isAutoFetchingRef.current = true;
+      const nextQuery = TRENDING_QUERIES[queryRotationIndexRef.current % TRENDING_QUERIES.length];
+      queryRotationIndexRef.current += 1;
+
+      fetchShorts(nextQuery).finally(() => {
+        setTimeout(() => {
+          isAutoFetchingRef.current = false;
+        }, 800);
+      });
     }
   }, [activeIndex, shorts.length, fetchShorts]);
 
@@ -111,7 +128,7 @@ export const ShortsView: React.FC = () => {
     }
   }, [activeIndex, scrollToIndex]);
 
-  // Keyboard navigation support (Arrow Up / Down)
+  // Keyboard navigation support (Arrow Up / Down / Mute / Play)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
@@ -140,6 +157,12 @@ export const ShortsView: React.FC = () => {
 
   return (
     <div className="relative w-full h-[calc(100vh-3.5rem-3.5rem)] md:h-[calc(100vh-3.5rem)] bg-neutral-950 flex items-center justify-center overflow-hidden">
+      {/* Realtime Trending Badge */}
+      <div className="absolute top-3 left-4 z-30 hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-white text-xs font-semibold select-none shadow-lg">
+        <Flame className="w-3.5 h-3.5 text-red-500 fill-red-500 animate-pulse" />
+        <span>Trending Shorts Real-Time</span>
+      </div>
+
       {/* Scrollable vertical snap container */}
       <div
         ref={containerRef}
@@ -353,6 +376,7 @@ export const ShortsView: React.FC = () => {
                         src={short.channelAvatar}
                         alt={short.channelTitle}
                         className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
                         onError={(e) => {
                           e.currentTarget.src = `https://picsum.photos/seed/${encodeURIComponent(short.channelTitle || 'creator')}/100/100`;
                         }}
@@ -416,7 +440,7 @@ export const ShortsView: React.FC = () => {
           onClick={handlePrev}
           disabled={activeIndex === 0}
           aria-label="Previous short"
-          className="w-10 h-10 rounded-full bg-neutral-900/80 hover:bg-neutral-800 disabled:opacity-30 backdrop-blur-md text-white flex items-center justify-center border border-neutral-700 shadow-xl transition-transform active:scale-95"
+          className="w-10 h-10 rounded-full bg-neutral-900/80 hover:bg-neutral-800 disabled:opacity-30 backdrop-blur-md text-white flex items-center justify-center border border-neutral-700 shadow-xl transition-transform active:scale-95 cursor-pointer"
         >
           <ChevronUp className="w-5 h-5" />
         </button>
@@ -426,7 +450,7 @@ export const ShortsView: React.FC = () => {
           onClick={handleNext}
           disabled={activeIndex === shorts.length - 1}
           aria-label="Next short"
-          className="w-10 h-10 rounded-full bg-neutral-900/80 hover:bg-neutral-800 disabled:opacity-30 backdrop-blur-md text-white flex items-center justify-center border border-neutral-700 shadow-xl transition-transform active:scale-95"
+          className="w-10 h-10 rounded-full bg-neutral-900/80 hover:bg-neutral-800 disabled:opacity-30 backdrop-blur-md text-white flex items-center justify-center border border-neutral-700 shadow-xl transition-transform active:scale-95 cursor-pointer"
         >
           <ChevronDown className="w-5 h-5" />
         </button>
