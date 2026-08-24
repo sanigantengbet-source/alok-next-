@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   CheckCircle2,
   Bell,
@@ -18,29 +18,24 @@ import {
   Radio,
   Layers,
   ArrowLeft,
-  RefreshCw,
-  AlertCircle,
-  Film,
-  ListVideo,
-  Eye,
-  Calendar,
-  Globe,
-  Check,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
-import { Video, Channel, Playlist } from '@/types';
+import { Video, Channel } from '@/types';
 import { VideoCard } from '@/components/Feed/VideoCard';
-import { VideoCardSkeleton } from '@/components/Feed/VideoCardSkeleton';
+import { useDeArrow } from '@/hooks/useDeArrow';
 
 export const ChannelView: React.FC = () => {
   const {
     activeChannel,
     setCurrentView,
     previousView,
+    videos,
+    shorts,
     subscribedChannelIds,
     toggleSubscribe,
     playVideoById,
-    updateChannelInState,
+    setShareModalVideo,
+    searchYouTube,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'home' | 'videos' | 'shorts' | 'playlists' | 'about'>('home');
@@ -48,118 +43,211 @@ export const ChannelView: React.FC = () => {
   const [channelSearch, setChannelSearch] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
-
-  // Loaded channel state
-  const [channelData, setChannelData] = useState<Channel | null>(null);
   const [channelVideos, setChannelVideos] = useState<Video[]>([]);
-  const [channelShorts, setChannelShorts] = useState<Video[]>([]);
-  const [channelPlaylists, setChannelPlaylists] = useState<Playlist[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Notification bell state
+  const [isLoadingChannelVideos, setIsLoadingChannelVideos] = useState(false);
   const [bellState, setBellState] = useState<'all' | 'personalized' | 'none'>('all');
   const [isBellMenuOpen, setIsBellMenuOpen] = useState(false);
+  const [liveMeta, setLiveMeta] = useState<{ avatar?: string; banner?: string; subscribers?: string; description?: string } | null>(null);
 
-  // Active channel reference fallback
-  const baseChannel: Channel = useMemo(() => {
-    if (activeChannel) return activeChannel;
-    return {
-      id: 'c-freecodecamp',
-      title: 'freeCodeCamp.org',
-      avatar: 'https://yt3.googleusercontent.com/ytc/AIdro_lGRc-05M2OoE1ejQdxeFhyP7OkJg9h4Y-7CK_5je3QqFI=s900-c-k-c0x00ffffff-no-rj',
-      banner: 'https://yt3.googleusercontent.com/_GxV-5nnBhGDO2bDgFtrpVypm6z8AC_tFg7W0zSsS9AGlw5xVg8zKLQ5tvTk6BwU1LzmWJb4YA=w2560-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj',
-      handle: '@freecodecamp',
-      subscribers: '9.45M',
-      verified: true,
-      videosCount: 1420,
-      description: 'Learn to code for free with high quality tutorials on Python, JavaScript, Next.js, and web development.',
-      joinedDate: 'Dec 16, 2014',
-      viewsCount: '680M views',
-    };
-  }, [activeChannel]);
+  // If no active channel selected, fallback gracefully
+  const baseChannel: Channel = useMemo(
+    () =>
+      activeChannel || {
+        id: 'c-default',
+        title: 'Featured Channel',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80',
+        handle: '@featured_channel',
+        subscribers: '250K',
+        verified: true,
+        videosCount: 88,
+        description: 'Welcome to our official NextTube channel. Discover tutorials, high quality podcasts, and exclusive videos.',
+        joinedDate: 'Jan 2021',
+        viewsCount: '15.2M views',
+      },
+    [activeChannel]
+  );
 
-  // Current display channel merged with live data
-  const currentChannel: Channel = useMemo(() => {
-    return channelData || baseChannel;
-  }, [channelData, baseChannel]);
+  const channel: Channel = useMemo(
+    () => ({
+      ...baseChannel,
+      avatar: liveMeta?.avatar || baseChannel.avatar,
+      banner: liveMeta?.banner || baseChannel.banner,
+      subscribers: liveMeta?.subscribers || baseChannel.subscribers,
+      description: liveMeta?.description || baseChannel.description,
+    }),
+    [baseChannel, liveMeta]
+  );
 
-  const isSubscribed = subscribedChannelIds.includes(currentChannel.id);
+  const isSubscribed = subscribedChannelIds.includes(channel.id);
 
-  // Fetch real channel details and content
-  const [reloadCounter, setReloadCounter] = useState(0);
-  const handleRetry = useCallback(() => {
-    setReloadCounter((prev) => prev + 1);
-  }, []);
-
+  // Fetch real YouTube channel metadata (avatar, banner, description)
   useEffect(() => {
     let isCancelled = false;
 
-    const executeFetch = async () => {
-      setIsLoading(true);
-      setErrorMessage(null);
-
+    const fetchLiveChannelInfo = async () => {
       try {
-        const q = encodeURIComponent(baseChannel.title || '');
-        const id = encodeURIComponent(baseChannel.id || '');
-        const handle = encodeURIComponent(baseChannel.handle || '');
-        const url = `/api/youtube/channel?q=${q}&id=${id}&handle=${handle}&channelId=${id}`;
-
-        const res = await fetch(url);
-        if (!res.ok) {
-          throw new Error('Gagal mengambil data channel');
+        const res = await fetch(`/api/youtube/channel?q=${encodeURIComponent(baseChannel.title)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.channel && !isCancelled) {
+            setLiveMeta({
+              avatar: data.channel.avatar,
+              banner: data.channel.banner,
+              subscribers: data.channel.subscribers,
+              description: data.channel.description,
+            });
+          }
         }
-
-        const data = await res.json();
-        if (isCancelled) return;
-
-        if (data.channel) {
-          const fresh: Channel = {
-            ...baseChannel,
-            ...data.channel,
-            id: baseChannel.id || data.channel.id,
-          };
-          setChannelData(fresh);
-          updateChannelInState(fresh);
-        }
-
-        if (Array.isArray(data.videos)) {
-          setChannelVideos(data.videos);
-        } else {
-          setChannelVideos([]);
-        }
-
-        if (Array.isArray(data.shorts)) {
-          setChannelShorts(data.shorts);
-        } else {
-          setChannelShorts([]);
-        }
-
-        if (Array.isArray(data.playlists)) {
-          setChannelPlaylists(data.playlists);
-        } else {
-          setChannelPlaylists([]);
-        }
-      } catch (err: any) {
-        if (!isCancelled) {
-          console.error('Error loading channel profile:', err);
-          setErrorMessage(err.message || 'Terjadi kesalahan saat memuat channel.');
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+      } catch {
+        // graceful fallback
       }
     };
 
-    executeFetch();
+    fetchLiveChannelInfo();
 
     return () => {
       isCancelled = true;
     };
-  }, [baseChannel, updateChannelInState, reloadCounter]);
+  }, [baseChannel.title]);
+
+  // Filter local videos & fetch real YouTube videos for this specific channel
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadChannelContent = async () => {
+      // 1. Gather all local matching videos
+      const localMatches = videos.filter(
+        (v) =>
+          (v.channelTitle && v.channelTitle.toLowerCase() === channel.title.toLowerCase()) ||
+          (v.channelId && v.channelId === channel.id) ||
+          v.title.toLowerCase().includes(channel.title.toLowerCase())
+      );
+
+      // 2. If we have fewer than 6 videos for this channel, fetch from live YouTube Search API
+      if (localMatches.length < 6) {
+        try {
+          setIsLoadingChannelVideos(true);
+          const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(channel.title)}&limit=15`);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.results) && data.results.length > 0 && !isCancelled) {
+              const combined = [...localMatches];
+              const seen = new Set(localMatches.map((m) => m.id));
+              for (const r of data.results) {
+                if (!seen.has(r.id)) {
+                  // Ensure channel title & avatar match this channel
+                  combined.push({
+                    ...r,
+                    channelTitle: channel.title,
+                    channelAvatar: channel.avatar || r.channelAvatar,
+                  });
+                  seen.add(r.id);
+                }
+              }
+              setChannelVideos(combined);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('Channel video fetch fallback note:', e);
+        } finally {
+          if (!isCancelled) {
+            setIsLoadingChannelVideos(false);
+          }
+        }
+      }
+
+      if (!isCancelled) {
+        setChannelVideos(localMatches.length > 0 ? localMatches : videos.slice(0, 8));
+      }
+    };
+
+    loadChannelContent();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [channel, videos]);
+
+  // Dedicated Channel Shorts state and live fetch
+  const [channelSpecificShorts, setChannelSpecificShorts] = useState<Video[]>([]);
+  const [isLoadingShorts, setIsLoadingShorts] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadChannelShorts = async () => {
+      // 1. Filter local existing shorts matching this channel
+      const localMatchedShorts = shorts.filter(
+        (s) =>
+          (s.channelTitle && s.channelTitle.toLowerCase() === channel.title.toLowerCase()) ||
+          (s.channelId && s.channelId === channel.id) ||
+          s.title.toLowerCase().includes(channel.title.toLowerCase())
+      );
+
+      if (localMatchedShorts.length >= 4) {
+        if (!isCancelled) {
+          setChannelSpecificShorts(localMatchedShorts);
+        }
+        return;
+      }
+
+      // 2. Query live YouTube Shorts specifically for this channel handle/title
+      setIsLoadingShorts(true);
+      try {
+        const searchQuery = `${channel.title} shorts`;
+        const res = await fetch(`/api/youtube/shorts?q=${encodeURIComponent(searchQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.results) && data.results.length > 0 && !isCancelled) {
+            const formatted = data.results.map((item: Video) => ({
+              ...item,
+              channelTitle: channel.title,
+              channelAvatar: channel.avatar || item.channelAvatar,
+            }));
+            const seen = new Set(localMatchedShorts.map((s) => s.id));
+            const merged = [...localMatchedShorts];
+            for (const s of formatted) {
+              if (!seen.has(s.id)) {
+                merged.push(s);
+                seen.add(s.id);
+              }
+            }
+            setChannelSpecificShorts(merged);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Channel shorts fetch error:', err);
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingShorts(false);
+        }
+      }
+
+      if (!isCancelled) {
+        setChannelSpecificShorts(localMatchedShorts);
+      }
+    };
+
+    loadChannelShorts();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [channel, shorts]);
+
+  // Final Channel Shorts list
+  const channelShorts = useMemo(() => {
+    if (channelSpecificShorts.length > 0) return channelSpecificShorts;
+    const matched = shorts.filter(
+      (s) =>
+        (s.channelTitle && s.channelTitle.toLowerCase() === channel.title.toLowerCase()) ||
+        s.title.toLowerCase().includes(channel.title.toLowerCase())
+    );
+    return matched;
+  }, [channel, shorts, channelSpecificShorts]);
 
   // Filter and sort videos
   const sortedVideos = useMemo(() => {
@@ -167,11 +255,7 @@ export const ChannelView: React.FC = () => {
 
     if (channelSearch.trim()) {
       const q = channelSearch.toLowerCase();
-      list = list.filter(
-        (v) =>
-          v.title.toLowerCase().includes(q) ||
-          (v.description && v.description.toLowerCase().includes(q))
-      );
+      list = list.filter((v) => v.title.toLowerCase().includes(q) || (v.description && v.description.toLowerCase().includes(q)));
     }
 
     if (videoSort === 'popular') {
@@ -184,159 +268,124 @@ export const ChannelView: React.FC = () => {
 
   const featuredVideo = sortedVideos[0] || null;
 
-  const handleShareChannel = () => {
-    const url = typeof window !== 'undefined' ? window.location.href : 'https://nexttube.app';
-    if (navigator.share) {
-      navigator
-        .share({
-          title: currentChannel.title,
-          text: `Tonton channel ${currentChannel.title} di NextTube!`,
-          url,
-        })
-        .catch(() => {});
-    } else {
-      navigator.clipboard.writeText(url);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-      setIsShareModalOpen(true);
-    }
-  };
-
   return (
-    <div
-      id="channel-page-container"
-      className="w-full min-h-screen bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-gray-100 pb-24"
-    >
-      {/* Top Mobile Bar */}
+    <div id="channel-page-container" className="w-full min-h-screen bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-gray-100 pb-20">
+      {/* Top Mobile Back Bar */}
       <div className="sticky top-0 z-20 flex items-center justify-between px-3 py-2.5 bg-white/95 dark:bg-[#0f0f0f]/95 backdrop-blur-md border-b border-gray-200 dark:border-[#272727] md:hidden">
         <button
           onClick={() => setCurrentView(previousView === 'channel' ? 'home' : previousView)}
-          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-700 dark:text-gray-200"
-          aria-label="Kembali"
+          className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-700 dark:text-gray-200"
+          aria-label="Go back"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <span className="font-bold text-sm truncate max-w-[200px] text-gray-900 dark:text-white">
-          {currentChannel.title}
-        </span>
+        <span className="font-semibold text-sm truncate max-w-[200px]">{channel.title}</span>
         <button
           onClick={() => setIsAboutModalOpen(true)}
-          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-700 dark:text-gray-200"
-          aria-label="Info Channel"
+          className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-700 dark:text-gray-200"
+          aria-label="Channel Info"
         >
           <Info className="w-5 h-5" />
         </button>
       </div>
 
-      {/* 1. CHANNEL HERO BANNER */}
-      <div className="relative w-full h-32 sm:h-48 md:h-64 lg:h-72 bg-gradient-to-r from-gray-900 via-neutral-800 to-gray-900 overflow-hidden select-none">
-        {isLoading && !currentChannel.banner ? (
-          <div className="w-full h-full animate-pulse bg-gray-300 dark:bg-[#222]" />
-        ) : (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={
-                currentChannel.banner ||
-                'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=2560&auto=format&fit=crop&q=80'
-              }
-              alt={`${currentChannel.title} Banner`}
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                e.currentTarget.src =
-                  'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=2560&auto=format&fit=crop&q=80';
-              }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-          </>
-        )}
+      {/* 1. CHANNEL BANNER HEADER */}
+      <div className="relative w-full h-32 sm:h-48 md:h-64 lg:h-72 bg-gradient-to-r from-gray-900 via-gray-800 to-black overflow-hidden select-none">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={
+            channel.banner ||
+            `https://picsum.photos/seed/${encodeURIComponent(channel.title)}/1600/500`
+          }
+          alt={`${channel.title} Banner`}
+          className="w-full h-full object-cover opacity-80"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80';
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
       </div>
 
-      {/* 2. CHANNEL PROFILE INFO SECTION */}
+      {/* 2. CHANNEL PROFILE INFO SECTION (YouTube Format) */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 pb-6 border-b border-gray-200 dark:border-[#272727]">
           {/* Big Channel Avatar */}
           <div className="relative shrink-0 -mt-12 sm:-mt-16 ring-4 ring-white dark:ring-[#0f0f0f] rounded-full overflow-hidden shadow-xl bg-gray-800">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={currentChannel.avatar}
-              alt={currentChannel.title}
-              className="w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 object-cover rounded-full bg-neutral-800"
+              src={channel.avatar}
+              alt={channel.title}
+              className="w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 object-cover rounded-full bg-gray-900 shadow-md"
               referrerPolicy="no-referrer"
               onError={(e) => {
-                e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-                  currentChannel.title
-                )}&backgroundColor=e11d48,2563eb,d97706`;
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent && !parent.querySelector('.channel-header-fallback')) {
+                  const div = document.createElement('div');
+                  div.className =
+                    'channel-header-fallback w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full flex items-center justify-center font-black text-4xl text-white bg-gradient-to-tr from-red-600 to-rose-700 shadow-md';
+                  div.innerText = (channel.title || 'C').charAt(0).toUpperCase();
+                  parent.appendChild(div);
+                }
               }}
             />
           </div>
 
-          {/* Channel Name, Handle, Sub Count & Description */}
+          {/* Channel Name, Handle, Sub Count & Bio */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
-                {currentChannel.title}
+                {channel.title}
               </h1>
-              {currentChannel.verified && (
+              {channel.verified && (
                 <span title="Verified Creator">
                   <CheckCircle2 className="w-5 h-5 text-gray-500 fill-gray-400/20" />
                 </span>
               )}
             </div>
 
-            {/* Handle & Stats */}
+            {/* Handle & Stats Line */}
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 flex-wrap font-medium">
-              <span className="font-semibold text-gray-900 dark:text-gray-200">
-                {currentChannel.handle || `@${currentChannel.title.replace(/\s+/g, '').toLowerCase()}`}
-              </span>
+              <span className="font-semibold text-gray-900 dark:text-gray-200">{channel.handle || `@${channel.title.replace(/\s+/g, '').toLowerCase()}`}</span>
               <span>&bull;</span>
-              <span>{currentChannel.subscribers} subscribers</span>
+              <span>{channel.subscribers} subscribers</span>
               <span>&bull;</span>
-              <span>
-                {currentChannel.videosCount || channelVideos.length || 50} video
-              </span>
+              <span>{channel.videosCount || channelVideos.length || 50} videos</span>
             </div>
 
-            {/* Description Snippet */}
+            {/* Description Excerpt */}
             <div
               onClick={() => setIsAboutModalOpen(true)}
               className="mt-2 text-xs sm:text-sm text-gray-600 dark:text-gray-300 line-clamp-2 max-w-3xl cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group flex items-baseline gap-1"
             >
-              <span>
-                {currentChannel.description ||
-                  `Selamat datang di channel resmi ${currentChannel.title}. Tonton video, podcast, dan materi eksklusif.`}
-              </span>
-              <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:underline inline-flex items-center text-xs whitespace-nowrap">
-                ...selengkapnya <ChevronRight className="w-3.5 h-3.5 inline" />
+              <span>{channel.description || 'Welcome to the official channel. Stream high quality videos, tutorials and playlists.'}</span>
+              <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:underline inline-flex items-center text-xs">
+                ...more <ChevronRight className="w-3.5 h-3.5 inline" />
               </span>
             </div>
 
-            {/* Action Buttons: Subscribe & Share */}
+            {/* Action Buttons: Subscribe, Bell, Share */}
             <div className="mt-4 flex items-center gap-2.5 flex-wrap">
+              {/* Subscribe Button */}
               {isSubscribed ? (
                 <div className="relative flex items-center bg-gray-100 dark:bg-[#272727] rounded-full border border-gray-300 dark:border-[#383838]">
                   <button
-                    id="channel-page-subscribed-btn"
-                    onClick={() => toggleSubscribe(currentChannel.id)}
-                    className="px-4 py-2 text-xs sm:text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#333] rounded-l-full transition-colors flex items-center gap-1.5"
+                    id="channel-page-subscribe-btn"
+                    onClick={() => toggleSubscribe(channel.id)}
+                    className="px-4 py-2 text-sm font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#333] rounded-l-full transition-colors"
                   >
-                    <Check className="w-4 h-4 text-emerald-500" />
-                    <span>Disubscribe</span>
+                    Subscribed
                   </button>
                   <div className="h-4 w-px bg-gray-300 dark:bg-gray-600" />
                   <button
                     id="channel-page-bell-btn"
                     onClick={() => setIsBellMenuOpen(!isBellMenuOpen)}
                     className="px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#333] rounded-r-full transition-colors"
-                    title="Preferensi Notifikasi"
-                    aria-label="Preferensi Notifikasi"
+                    title="Notification preferences"
+                    aria-label="Notification preferences"
                   >
-                    <Bell
-                      className={`w-4 h-4 ${
-                        bellState === 'all' ? 'fill-current text-blue-500' : ''
-                      }`}
-                    />
+                    <Bell className={`w-4 h-4 ${bellState === 'all' ? 'fill-current text-blue-500' : ''}`} />
                   </button>
 
                   {/* Bell Menu Dropdown */}
@@ -352,7 +401,7 @@ export const ChannelView: React.FC = () => {
                         }`}
                       >
                         <Bell className="w-3.5 h-3.5 fill-current" />
-                        <span>Semua Notifikasi</span>
+                        <span>All Notifications</span>
                       </button>
                       <button
                         onClick={() => {
@@ -360,13 +409,11 @@ export const ChannelView: React.FC = () => {
                           setIsBellMenuOpen(false);
                         }}
                         className={`w-full text-left px-3.5 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-[#333] ${
-                          bellState === 'personalized'
-                            ? 'text-blue-500'
-                            : 'text-gray-700 dark:text-gray-300'
+                          bellState === 'personalized' ? 'text-blue-500' : 'text-gray-700 dark:text-gray-300'
                         }`}
                       >
                         <Bell className="w-3.5 h-3.5" />
-                        <span>Dipersonalisasi</span>
+                        <span>Personalized</span>
                       </button>
                       <button
                         onClick={() => {
@@ -378,7 +425,7 @@ export const ChannelView: React.FC = () => {
                         }`}
                       >
                         <X className="w-3.5 h-3.5" />
-                        <span>Nonaktifkan</span>
+                        <span>None</span>
                       </button>
                     </div>
                   )}
@@ -386,35 +433,46 @@ export const ChannelView: React.FC = () => {
               ) : (
                 <button
                   id="channel-page-subscribe-btn"
-                  onClick={() => toggleSubscribe(currentChannel.id)}
-                  className="px-5 py-2 rounded-full text-xs sm:text-sm font-bold bg-red-600 hover:bg-red-700 text-white active:scale-95 transition-all shadow-xs"
+                  onClick={() => toggleSubscribe(channel.id)}
+                  className="px-5 py-2 rounded-full text-sm font-semibold bg-black text-white dark:bg-white dark:text-black hover:opacity-90 active:scale-95 transition-all shadow-xs"
                 >
                   Subscribe
                 </button>
               )}
 
-              {/* Share Button */}
+              {/* Share Channel Button */}
               <button
                 id="channel-page-share-btn"
-                onClick={handleShareChannel}
-                className="px-4 py-2 rounded-full border border-gray-300 dark:border-[#383838] hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-800 dark:text-gray-200 text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2"
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: channel.title,
+                      text: `Check out ${channel.title} on NextTube!`,
+                      url: window.location.href,
+                    }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(window.location.href);
+                    alert(`Copied link to ${channel.title}!`);
+                  }
+                }}
+                className="px-4 py-2 rounded-full border border-gray-300 dark:border-[#383838] hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-800 dark:text-gray-200 text-sm font-semibold transition-colors flex items-center gap-2"
               >
                 <Share2 className="w-4 h-4" />
-                <span>{copiedLink ? 'Link Tersalin!' : 'Bagikan'}</span>
+                <span>Share</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* 3. NAVIGATION TABS */}
+        {/* 3. YOUTUBE CHANNEL NAVIGATION TABS (Underline border removed as requested) */}
         <div className="flex items-center justify-between mt-3 mb-2 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-1.5 sm:gap-2">
             {[
-              { key: 'home', label: 'BERANDA' },
-              { key: 'videos', label: 'VIDEO' },
+              { key: 'home', label: 'HOME' },
+              { key: 'videos', label: 'VIDEOS' },
               { key: 'shorts', label: 'SHORTS' },
-              { key: 'playlists', label: 'PLAYLIST' },
-              { key: 'about', label: 'TENTANG' },
+              { key: 'playlists', label: 'PLAYLISTS' },
+              { key: 'about', label: 'ABOUT' },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -441,7 +499,7 @@ export const ChannelView: React.FC = () => {
                 <Search className="w-3.5 h-3.5 text-gray-400 mr-2 shrink-0" />
                 <input
                   type="text"
-                  placeholder={`Cari di ${currentChannel.title}...`}
+                  placeholder={`Search ${channel.title}...`}
                   value={channelSearch}
                   onChange={(e) => setChannelSearch(e.target.value)}
                   className="bg-transparent text-xs text-gray-900 dark:text-white focus:outline-none w-32 sm:w-48"
@@ -461,7 +519,7 @@ export const ChannelView: React.FC = () => {
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-[#272727] text-gray-600 dark:text-gray-400 transition-colors"
-                title={`Cari video di ${currentChannel.title}`}
+                title={`Search within ${channel.title}`}
               >
                 <Search className="w-4 h-4" />
               </button>
@@ -469,462 +527,344 @@ export const ChannelView: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. MAIN CONTENT AREA */}
+        {/* 4. TAB CONTENTS */}
         <div className="mt-6">
-          {/* LOADING STATE SKELETON */}
-          {isLoading && (
-            <div className="space-y-6">
-              <div className="h-44 w-full bg-gray-100 dark:bg-[#1a1a1a] rounded-2xl animate-pulse" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <VideoCardSkeleton key={`chan-skel-${i}`} id={`channel-skel-${i}`} />
+          {/* TAB 1: HOME */}
+          {activeTab === 'home' && (
+            <div className="space-y-8">
+              {/* Featured Video Highlight Banner */}
+              {featuredVideo && !channelSearch && (
+                <div
+                  id="channel-featured-video"
+                  onClick={() => playVideoById(featuredVideo.id, featuredVideo)}
+                  className="group cursor-pointer flex flex-col md:flex-row gap-6 p-4 sm:p-5 rounded-2xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] hover:border-gray-300 dark:hover:border-[#3d3d3d] transition-all"
+                >
+                  <div className="relative w-full md:w-80 lg:w-96 aspect-video rounded-xl overflow-hidden bg-black shrink-0 shadow-md">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={featuredVideo.thumbnailUrl}
+                      alt={featuredVideo.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center transition-all">
+                      <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <Play className="w-5 h-5 ml-0.5 fill-white" />
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/80 text-white text-[11px] font-semibold rounded-md">
+                      {featuredVideo.duration}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 flex flex-col justify-center min-w-0">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
+                      Featured Upload
+                    </span>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white line-clamp-2 leading-snug group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      {featuredVideo.title}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
+                      {featuredVideo.description || 'Stream and learn directly on NextTube with full SponsorBlock and DeArrow support.'}
+                    </p>
+                    <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 mt-3 font-medium">
+                      <span>{new Intl.NumberFormat().format(featuredVideo.views)} views</span>
+                      <span>&bull;</span>
+                      <span>{featuredVideo.uploadedAt}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Latest Uploads Section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-blue-500" />
+                    <span>Latest Uploads</span>
+                  </h2>
+                  <button
+                    onClick={() => setActiveTab('videos')}
+                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-6">
+                  {sortedVideos.slice(0, 8).map((video) => (
+                    <VideoCard key={video.id} video={video} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Shorts on Home */}
+              {channelShorts.length > 0 && (
+                <div className="pt-4 border-t border-gray-200 dark:border-[#272727]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-red-500" />
+                      <span>{channel.title} Shorts</span>
+                    </h2>
+                    <button
+                      onClick={() => setActiveTab('shorts')}
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      View all shorts
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {channelShorts.slice(0, 6).map((short) => (
+                      <div
+                        key={short.id}
+                        onClick={() => playVideoById(short.id, short)}
+                        className="group cursor-pointer flex flex-col"
+                      >
+                        <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black shadow-xs group-hover:scale-102 transition-transform">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={short.thumbnailUrl}
+                            alt={short.title}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2.5">
+                            <p className="text-white text-xs font-bold line-clamp-2 leading-tight drop-shadow-sm">
+                              {short.title}
+                            </p>
+                            <span className="text-gray-300 text-[10px] mt-1 font-medium">
+                              {short.views ? new Intl.NumberFormat().format(short.views) : '120K'} views
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: VIDEOS */}
+          {activeTab === 'videos' && (
+            <div>
+              {/* Sort Filter Chips */}
+              <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1">
+                {[
+                  { key: 'latest', label: 'Latest' },
+                  { key: 'popular', label: 'Popular' },
+                  { key: 'oldest', label: 'Oldest' },
+                ].map((sortOption) => (
+                  <button
+                    key={sortOption.key}
+                    id={`sort-tab-${sortOption.key}`}
+                    onClick={() => setVideoSort(sortOption.key as any)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      videoSort === sortOption.key
+                        ? 'bg-gray-900 dark:bg-white text-white dark:text-black font-semibold'
+                        : 'bg-gray-100 dark:bg-[#272727] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#333]'
+                    }`}
+                  >
+                    {sortOption.label}
+                  </button>
                 ))}
               </div>
+
+              {/* Videos Grid */}
+              {sortedVideos.length === 0 ? (
+                <div className="text-center py-16 text-gray-500">
+                  <p className="text-base font-semibold">No videos found for this search</p>
+                  <p className="text-xs mt-1">Try searching with different keywords</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-6">
+                  {sortedVideos.map((video) => (
+                    <VideoCard key={video.id} video={video} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* ERROR STATE */}
-          {!isLoading && errorMessage && (
-            <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-2xl p-6 text-center max-w-lg mx-auto my-8">
-              <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
-              <h3 className="font-bold text-base text-gray-900 dark:text-white mb-1">
-                Gagal Memuat Konten Channel
-              </h3>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">{errorMessage}</p>
-              <button
-                onClick={handleRetry}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold inline-flex items-center gap-2"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Coba Lagi</span>
-              </button>
-            </div>
-          )}
-
-          {/* LOADED CONTENT */}
-          {!isLoading && !errorMessage && (
-            <>
-              {/* TAB 1: BERANDA (HOME) */}
-              {activeTab === 'home' && (
-                <div className="space-y-8">
-                  {/* Spotlight Featured Video */}
-                  {featuredVideo && !channelSearch && (
+          {/* TAB 3: SHORTS */}
+          {activeTab === 'shorts' && (
+            <div>
+              {isLoadingShorts ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {Array.from({ length: 6 }).map((_, idx) => (
+                    <div key={idx} className="relative aspect-[9/16] rounded-xl overflow-hidden bg-gray-200 dark:bg-[#202020] animate-pulse" />
+                  ))}
+                </div>
+              ) : channelShorts.length === 0 ? (
+                <div className="text-center py-16 text-gray-500">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-[#202020] flex items-center justify-center mx-auto mb-3 text-red-500">
+                    <Flame className="w-6 h-6" />
+                  </div>
+                  <p className="text-base font-semibold text-gray-800 dark:text-gray-200">Belum ada Shorts dari {channel.title}</p>
+                  <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">Kreator ini belum membagikan video berformat Shorts.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {channelShorts.map((short) => (
                     <div
-                      id="channel-featured-video"
-                      onClick={() => playVideoById(featuredVideo.id, featuredVideo)}
-                      className="group cursor-pointer flex flex-col md:flex-row gap-6 p-4 sm:p-5 rounded-2xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] hover:border-gray-300 dark:hover:border-[#3d3d3d] transition-all shadow-xs"
+                      key={short.id}
+                      onClick={() => playVideoById(short.id, short)}
+                      className="group cursor-pointer flex flex-col"
                     >
-                      <div className="relative w-full md:w-80 lg:w-96 aspect-video rounded-xl overflow-hidden bg-black shrink-0 shadow-md">
+                      <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-black shadow-xs group-hover:scale-102 transition-transform">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={featuredVideo.thumbnailUrl}
-                          alt={featuredVideo.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          src={short.thumbnailUrl}
+                          alt={short.title}
+                          className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center transition-all">
-                          <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                            <Play className="w-5 h-5 ml-0.5 fill-white" />
-                          </div>
-                        </div>
-                        <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/80 text-white text-[11px] font-semibold rounded-md">
-                          {featuredVideo.duration}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 flex flex-col justify-center min-w-0">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
-                          Video Unggulan
-                        </span>
-                        <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white line-clamp-2 leading-snug group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                          {featuredVideo.title}
-                        </h3>
-                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
-                          {featuredVideo.description ||
-                            `Tonton langsung di NextTube dengan integrasi SponsorBlock & DeArrow.`}
-                        </p>
-                        <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 mt-3 font-medium">
-                          <span>{new Intl.NumberFormat().format(featuredVideo.views)} penayangan</span>
-                          <span>&bull;</span>
-                          <span>{featuredVideo.uploadedAt}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Latest Uploads Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Film className="w-4 h-4 text-red-500" />
-                        <span>Upload Terbaru</span>
-                      </h2>
-                    </div>
-
-                    {sortedVideos.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-8">
-                        {sortedVideos.slice(0, 8).map((v) => (
-                          <VideoCard key={v.id} video={v} />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 bg-gray-50 dark:bg-[#181818] rounded-2xl border border-gray-200 dark:border-[#272727]">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Tidak ada video yang ditemukan.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Popular Shorts Shelf */}
-                  {channelShorts.length > 0 && (
-                    <div className="pt-4 border-t border-gray-200 dark:border-[#272727]">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                          <Flame className="w-4 h-4 text-red-500" />
-                          <span>Shorts Populer</span>
-                        </h2>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                        {channelShorts.slice(0, 6).map((short) => (
-                          <div
-                            key={short.id}
-                            onClick={() => playVideoById(short.id, short)}
-                            className="group cursor-pointer flex flex-col"
-                          >
-                            <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-gray-900 mb-2 shadow-xs group-hover:shadow-md transition-all">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={short.thumbnailUrl}
-                                alt={short.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                referrerPolicy="no-referrer"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                              <div className="absolute bottom-2 left-2 right-2 text-white">
-                                <span className="text-[11px] font-bold block truncate">
-                                  {new Intl.NumberFormat().format(short.views)} penayangan
-                                </span>
-                              </div>
-                            </div>
-                            <h3 className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 group-hover:text-blue-500 transition-colors">
-                              {short.title}
-                            </h3>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 2: VIDEO */}
-              {activeTab === 'videos' && (
-                <div>
-                  {/* Sort Filter Chips */}
-                  <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                    <div className="flex items-center gap-2">
-                      {[
-                        { id: 'latest', label: 'Terbaru' },
-                        { id: 'popular', label: 'Populer' },
-                        { id: 'oldest', label: 'Terlama' },
-                      ].map((chip) => (
-                        <button
-                          key={chip.id}
-                          id={`sort-chip-${chip.id}`}
-                          onClick={() => setVideoSort(chip.id as any)}
-                          className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                            videoSort === chip.id
-                              ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 shadow-xs'
-                              : 'bg-gray-100 dark:bg-[#222] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#2c2c2c]'
-                          }`}
-                        >
-                          {chip.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {sortedVideos.length} video tersedia
-                    </span>
-                  </div>
-
-                  {/* Videos Grid */}
-                  {sortedVideos.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-8">
-                      {sortedVideos.map((v) => (
-                        <VideoCard key={v.id} video={v} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-16 bg-gray-50 dark:bg-[#181818] rounded-3xl border border-gray-200 dark:border-[#272727] max-w-md mx-auto my-8">
-                      <Film className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
-                        Tidak Ada Video
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {channelSearch
-                          ? `Tidak ditemukan video untuk kata kunci "${channelSearch}".`
-                          : 'Channel ini belum memiliki video publik.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 3: SHORTS */}
-              {activeTab === 'shorts' && (
-                <div>
-                  {channelShorts.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                      {channelShorts.map((short) => (
-                        <div
-                          key={short.id}
-                          onClick={() => playVideoById(short.id, short)}
-                          className="group cursor-pointer flex flex-col"
-                        >
-                          <div className="relative aspect-[9/16] rounded-2xl overflow-hidden bg-gray-900 mb-2 shadow-xs group-hover:shadow-lg transition-all">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={short.thumbnailUrl}
-                              alt={short.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                            <div className="absolute bottom-2.5 left-2.5 right-2.5 text-white">
-                              <span className="text-xs font-bold block truncate">
-                                {new Intl.NumberFormat().format(short.views)} views
-                              </span>
-                            </div>
-                          </div>
-                          <h3 className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 group-hover:text-blue-500 transition-colors">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2.5">
+                          <p className="text-white text-xs font-bold line-clamp-2 leading-tight drop-shadow-sm">
                             {short.title}
-                          </h3>
+                          </p>
+                          <span className="text-gray-300 text-[10px] mt-1 font-medium">
+                            {short.views ? new Intl.NumberFormat().format(short.views) : '120K'} views
+                          </span>
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="text-center py-16 bg-gray-50 dark:bg-[#181818] rounded-3xl border border-gray-200 dark:border-[#272727] max-w-md mx-auto my-8">
-                      <Flame className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
-                        Tidak Ada Shorts
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Channel ini belum mengunggah YouTube Shorts.
-                      </p>
-                    </div>
-                  )}
+                  ))}
                 </div>
               )}
+            </div>
+          )}
 
-              {/* TAB 4: PLAYLIST */}
-              {activeTab === 'playlists' && (
+          {/* TAB 4: PLAYLISTS */}
+          {activeTab === 'playlists' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {[
+                { title: 'Full Series & Masterclasses', count: 18, thumb: channelVideos[0]?.thumbnailUrl },
+                { title: 'Podcasts & Deep Talks', count: 12, thumb: channelVideos[1]?.thumbnailUrl },
+                { title: 'Quick Tips & Best Practices', count: 24, thumb: channelVideos[2]?.thumbnailUrl },
+                { title: 'Popular Highlights', count: 9, thumb: channelVideos[3]?.thumbnailUrl },
+              ].map((pl, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (channelVideos[idx]) {
+                      playVideoById(channelVideos[idx].id, channelVideos[idx]);
+                    }
+                  }}
+                  className="group cursor-pointer flex flex-col rounded-xl overflow-hidden bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] hover:shadow-md transition-all"
+                >
+                  <div className="relative aspect-video bg-black overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pl.thumb || channel.avatar}
+                      alt={pl.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-y-0 right-0 w-28 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center text-white p-2">
+                      <Layers className="w-5 h-5 mb-1" />
+                      <span className="text-xs font-bold">{pl.count}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-gray-300">Videos</span>
+                    </div>
+                  </div>
+                  <div className="p-3">
+                    <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{pl.title}</h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{channel.title} &bull; Playlist</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* TAB 5: ABOUT */}
+          {activeTab === 'about' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left Column: Bio & Description */}
+              <div className="lg:col-span-2 space-y-6">
                 <div>
-                  {channelPlaylists.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {channelPlaylists.map((pl) => (
-                        <div
-                          key={pl.id}
-                          className="group cursor-pointer bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#272727] rounded-2xl overflow-hidden hover:shadow-md transition-all"
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">Description</h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line">
+                    {channel.description || 'Welcome to the official NextTube channel. Discover high-definition videos, insightful tutorials, and real-time live content.'}
+                  </p>
+                </div>
+
+                {channel.links && channel.links.length > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-[#272727]">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3">Links</h3>
+                    <div className="space-y-2">
+                      {channel.links.map((link, i) => (
+                        <a
+                          key={i}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
                         >
-                          <div className="relative aspect-video bg-gray-900 overflow-hidden">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={pl.thumbnailUrl}
-                              alt={pl.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-y-0 right-0 w-24 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center text-white text-xs font-bold gap-1">
-                              <ListVideo className="w-5 h-5" />
-                              <span>{pl.videoCount} video</span>
-                            </div>
-                          </div>
-                          <div className="p-3.5">
-                            <h3 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1 group-hover:text-blue-500 transition-colors">
-                              {pl.title}
-                            </h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {pl.updatedAt || 'Diperbarui baru-baru ini'}
-                            </p>
-                          </div>
-                        </div>
+                          <ExternalLink className="w-4 h-4" />
+                          <span>{link.title}</span>
+                        </a>
                       ))}
                     </div>
-                  ) : (
-                    <div className="text-center py-16 bg-gray-50 dark:bg-[#181818] rounded-3xl border border-gray-200 dark:border-[#272727] max-w-md mx-auto my-8">
-                      <ListVideo className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
-                        Tidak Ada Playlist Publik
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Channel ini belum membuat playlist publik.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 5: TENTANG (ABOUT) */}
-              {activeTab === 'about' && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {/* Left Description */}
-                  <div className="md:col-span-2 space-y-6">
-                    <div>
-                      <h2 className="text-base font-bold text-gray-900 dark:text-white mb-3">
-                        Deskripsi
-                      </h2>
-                      <div className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line bg-gray-50 dark:bg-[#181818] p-5 rounded-2xl border border-gray-200 dark:border-[#272727]">
-                        {currentChannel.description ||
-                          `Selamat datang di channel resmi ${currentChannel.title}.`}
-                      </div>
-                    </div>
-
-                    {/* External Links */}
-                    {currentChannel.links && currentChannel.links.length > 0 && (
-                      <div>
-                        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-3">
-                          Tautan &amp; Media Sosial
-                        </h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {currentChannel.links.map((lnk, i) => (
-                            <a
-                              key={i}
-                              href={lnk.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] hover:bg-gray-100 dark:hover:bg-[#222] transition-colors"
-                            >
-                              <div className="flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-blue-500 shrink-0" />
-                                <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">
-                                  {lnk.title}
-                                </span>
-                              </div>
-                              <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
+                )}
+              </div>
 
-                  {/* Right Statistics Box */}
-                  <div className="bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] rounded-2xl p-5 h-fit space-y-4">
-                    <h2 className="text-base font-bold text-gray-900 dark:text-white pb-3 border-b border-gray-200 dark:border-[#272727]">
-                      Statistik Channel
-                    </h2>
-
-                    <div className="space-y-3 text-xs">
-                      <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
-                        <Calendar className="w-4 h-4 shrink-0 text-red-500" />
-                        <span>Bergabung: {currentChannel.joinedDate || 'Bergabung di YouTube'}</span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
-                        <Eye className="w-4 h-4 shrink-0 text-blue-500" />
-                        <span>Total Penayangan: {currentChannel.viewsCount || 'Jutaan penayangan'}</span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
-                        <Flame className="w-4 h-4 shrink-0 text-amber-500" />
-                        <span>Pelanggan: {currentChannel.subscribers} subscribers</span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
-                        <Film className="w-4 h-4 shrink-0 text-emerald-500" />
-                        <span>Total Video: {currentChannel.videosCount || channelVideos.length || 50} video</span>
-                      </div>
-                    </div>
+              {/* Right Column: Channel Stats & Details */}
+              <div className="p-5 rounded-2xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] space-y-4 h-fit">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white uppercase tracking-wider">
+                  Stats
+                </h3>
+                <div className="space-y-3 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                  <div className="flex justify-between py-1 border-b border-gray-200 dark:border-[#272727]">
+                    <span className="text-gray-500">Joined</span>
+                    <span className="font-medium">{channel.joinedDate || 'Jan 15, 2021'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-gray-200 dark:border-[#272727]">
+                    <span className="text-gray-500">Total Views</span>
+                    <span className="font-medium">{channel.viewsCount || '18.4M views'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-gray-200 dark:border-[#272727]">
+                    <span className="text-gray-500">Subscribers</span>
+                    <span className="font-medium">{channel.subscribers}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-gray-500">Location</span>
+                    <span className="font-medium">Indonesia / Global</span>
                   </div>
                 </div>
-              )}
-            </>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* ABOUT MODAL (Dialog info popup) */}
+      {/* ABOUT MODAL (when clicking ...more) */}
       {isAboutModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-3xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-200 dark:border-[#333]">
-              <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={currentChannel.avatar}
-                  alt={currentChannel.title}
-                  className="w-10 h-10 rounded-full object-cover"
-                />
-                <div>
-                  <h3 className="font-bold text-base text-gray-900 dark:text-white">
-                    {currentChannel.title}
-                  </h3>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {currentChannel.handle}
-                  </span>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-white dark:bg-[#1f1f1f] rounded-2xl p-6 shadow-2xl border border-gray-200 dark:border-[#383838] max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-200 dark:border-[#2f2f2f]">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">About {channel.title}</h3>
               <button
                 onClick={() => setIsAboutModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#333] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-[#2f2f2f] text-gray-500 dark:text-gray-300"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-                  Deskripsi
-                </h4>
-                <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line">
-                  {currentChannel.description || 'Tidak ada deskripsi tersedia.'}
+            <div className="mt-4 space-y-4 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+              <p>{channel.description || 'Official NextTube Creator channel.'}</p>
+
+              <div className="pt-4 border-t border-gray-200 dark:border-[#2f2f2f] space-y-2">
+                <h4 className="font-bold text-gray-900 dark:text-white text-xs uppercase tracking-wider">Channel details</h4>
+                <p className="text-xs text-gray-500">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">{channel.subscribers}</span> subscribers &bull;{' '}
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">{channel.videosCount || 100}</span> videos &bull;{' '}
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">{channel.viewsCount || '15M'}</span> views
                 </p>
+                <p className="text-xs text-gray-500">Joined {channel.joinedDate || 'Jan 2021'}</p>
               </div>
-
-              <div className="pt-3 border-t border-gray-200 dark:border-[#333]">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                  Detail &amp; Statistik
-                </h4>
-                <div className="space-y-2 text-xs text-gray-600 dark:text-gray-400">
-                  <div className="flex justify-between">
-                    <span>Pelanggan:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {currentChannel.subscribers}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Jumlah Video:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {currentChannel.videosCount || channelVideos.length || 50}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Total Penayangan:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {currentChannel.viewsCount || 'Jutaan views'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Bergabung:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {currentChannel.joinedDate || 'Januari 2021'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-[#333] flex justify-end">
-              <button
-                onClick={() => setIsAboutModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-black font-semibold text-xs"
-              >
-                Tutup
-              </button>
             </div>
           </div>
         </div>
