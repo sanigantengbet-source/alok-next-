@@ -23,6 +23,7 @@ import { CommentSection } from './CommentSection';
 import { YouTubePlayer } from './YouTubePlayer';
 import { Video } from '@/types';
 import { useDeArrow } from '@/hooks/useDeArrow';
+import { formatCompactViews, formatExactViews } from '@/lib/youtube-views';
 
 const RelatedVideoRow: React.FC<{
   video: Video;
@@ -111,11 +112,40 @@ export const WatchPage: React.FC = () => {
   const [isAutoplay, setIsAutoplay] = useState(true);
   const [dynamicRelated, setDynamicRelated] = useState<Video[]>([]);
   const [isLoadingRelated, setIsLoadingRelated] = useState(false);
+  const [liveDetails, setLiveDetails] = useState<Partial<Video> | null>(null);
 
   // Swipe down gesture to pop up
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState<number>(0);
   const [isDraggingDown, setIsDraggingDown] = useState<boolean>(false);
+
+  // Fetch real-time live metadata (authentic exact views, likes, etc.) from YouTube
+  useEffect(() => {
+    if (!activeVideo) return;
+    let isSubscribed = true;
+
+    const rawYtId = activeVideo.youtubeId || (activeVideo.id.startsWith('yt-') ? activeVideo.id.replace(/^yt-/, '') : '');
+    if (!rawYtId) return;
+
+    const fetchLiveDetails = async () => {
+      try {
+        const res = await fetch(`/api/youtube/details?videoId=${encodeURIComponent(rawYtId)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isSubscribed && data?.video) {
+          setLiveDetails(data.video);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live video details:', err);
+      }
+    };
+
+    fetchLiveDetails();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [activeVideo]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartY(e.touches[0].clientY);
@@ -212,11 +242,18 @@ export const WatchPage: React.FC = () => {
   const isDisliked = dislikedVideoIds.includes(activeVideo.id);
   const isSaved = watchLaterIds.includes(activeVideo.id);
 
+  // Live metadata or fallback
+  const displayViews = liveDetails?.views ?? activeVideo.views;
+  const displayLikes = liveDetails?.likes ?? activeVideo.likes;
+  const displaySubs = liveDetails?.subscriberCount || activeVideo.subscriberCount;
+  const displayUploadedAt = liveDetails?.uploadedAt || activeVideo.uploadedAt;
+  const displayDescription = liveDetails?.description || activeVideo.description;
+
   // Final related list: dynamic API results first, fallback to relevant local videos
   const relatedVideos = dynamicRelated.length > 0 ? dynamicRelated : localRelevantVideos;
 
   const formatViews = (views: number): string => {
-    return new Intl.NumberFormat().format(views || 0);
+    return formatExactViews(views);
   };
 
   const handlePlayRelated = (video: Video) => {
@@ -313,7 +350,7 @@ export const WatchPage: React.FC = () => {
                     )}
                   </div>
                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {activeVideo.subscriberCount} subscribers
+                    {displaySubs} subscribers
                   </span>
                 </div>
               </div>
@@ -343,7 +380,7 @@ export const WatchPage: React.FC = () => {
                   }`}
                 >
                   <ThumbsUp className={`w-4 h-4 ${isLiked ? 'fill-blue-600 dark:fill-blue-400' : ''}`} />
-                  <span>{activeVideo.likes}</span>
+                  <span>{formatCompactViews(displayLikes)}</span>
                 </button>
                 <div className="w-px h-5 bg-gray-300 dark:bg-[#3e3e3e]" />
                 <button
@@ -390,16 +427,16 @@ export const WatchPage: React.FC = () => {
             onClick={() => setIsDescExpanded(!isDescExpanded)}
           >
             <div className="flex items-center gap-2 font-bold text-gray-900 dark:text-white mb-2">
-              <span>{formatViews(activeVideo.views)} views</span>
+              <span>{formatViews(displayViews)} views</span>
               <span>•</span>
-              <span>{activeVideo.uploadedAt}</span>
+              <span>{displayUploadedAt}</span>
               <span className="px-2 py-0.5 bg-gray-200 dark:bg-[#303030] rounded-md text-xs font-mono">
                 #{activeVideo.category}
               </span>
             </div>
 
             <p className={`whitespace-pre-line leading-relaxed ${isDescExpanded ? '' : 'line-clamp-3'}`}>
-              {activeVideo.description}
+              {displayDescription}
             </p>
 
             {/* Tags */}
