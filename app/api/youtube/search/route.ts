@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YouTube from 'youtube-sr';
+import { parseYouTubeViews } from '@/lib/youtube-views';
 
 // Helper to extract YouTube video ID if user searched a URL directly
 function extractYouTubeVideoId(input: string): string | null {
@@ -65,20 +66,19 @@ async function searchViaYouTubeHTML(query: string, limit = 20) {
         video.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url ||
         `https://picsum.photos/seed/${encodeURIComponent(channelTitle)}/100/100`;
 
-      const viewText = video.viewCountText?.simpleText || video.shortViewCountText?.simpleText || '10K views';
-      const uploadedText = video.publishedTimeText?.simpleText || 'Recently';
-      const duration = video.lengthText?.simpleText || '10:00';
+      const uploadedText =
+        video.publishedTimeText?.simpleText ||
+        (Array.isArray(video.publishedTimeText?.runs) ? video.publishedTimeText.runs.map((r: any) => r.text).join('') : '') ||
+        'Recently';
+      const duration =
+        video.lengthText?.simpleText ||
+        (Array.isArray(video.lengthText?.runs) ? video.lengthText.runs.map((r: any) => r.text).join('') : '') ||
+        '10:00';
       const thumb =
         video.thumbnail?.thumbnails?.[video.thumbnail.thumbnails.length - 1]?.url ||
         `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
 
-      // Estimate numeric views for sorting
-      let numericViews = 50000;
-      if (viewText.toLowerCase().includes('m')) {
-        numericViews = parseFloat(viewText) * 1000000;
-      } else if (viewText.toLowerCase().includes('k')) {
-        numericViews = parseFloat(viewText) * 1000;
-      }
+      const numericViews = parseYouTubeViews(video.viewCountText, video.shortViewCountText, 45000);
 
       results.push({
         id: `yt-${video.videoId}`,
@@ -93,14 +93,14 @@ async function searchViaYouTubeHTML(query: string, limit = 20) {
         subscriberCount: '100K+',
         verified: Boolean(video.ownerBadges?.length),
         thumbnailUrl: thumb,
-        views: Math.round(numericViews) || 25000,
-        likes: Math.round(numericViews * 0.05) || 1200,
+        views: numericViews,
+        likes: Math.round(numericViews * 0.04) || 1200,
         dislikes: 12,
         uploadedAt: uploadedText,
         duration,
         category: 'YouTube Search',
         tags: [channelTitle, 'Video'],
-        commentsCount: Math.round(numericViews * 0.003) || 85,
+        commentsCount: Math.round(numericViews * 0.002) || 85,
       });
     }
 
