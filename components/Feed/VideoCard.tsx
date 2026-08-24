@@ -5,6 +5,7 @@ import { CheckCircle2, Clock, Share2, MoreVertical, Play, ListPlus } from 'lucid
 import { Video } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useDeArrow } from '@/hooks/useDeArrow';
+import { formatCompactViews } from '@/lib/youtube-views';
 
 interface VideoCardProps {
   video: Video;
@@ -24,13 +25,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
   const isWatchLater = watchLaterIds.includes(video.id);
 
   const formatViews = (views: number): string => {
-    if (views >= 1000000) {
-      return (views / 1000000).toFixed(1) + 'M';
-    }
-    if (views >= 1000) {
-      return (views / 1000).toFixed(0) + 'K';
-    }
-    return views.toString();
+    return formatCompactViews(views);
   };
 
   return (
