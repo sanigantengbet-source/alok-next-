@@ -64,9 +64,22 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video }) => {
           </div>
         </div>
 
+        {/* Live / Replay Badge */}
+        {video.isLive ? (
+          <div className="absolute top-2 left-2 px-2 py-0.5 bg-red-600 text-white text-[10px] font-extrabold uppercase rounded-md tracking-wider flex items-center gap-1 shadow-md animate-pulse">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+            <span>LIVE</span>
+          </div>
+        ) : video.category === 'Live Replay' || video.tags?.includes('Replay') ? (
+          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-700/90 backdrop-blur-xs text-white text-[10px] font-bold rounded-md tracking-wide shadow-md flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-300" />
+            <span>REPLAY LIVE</span>
+          </div>
+        ) : null}
+
         {/* Duration Badge */}
         <div className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/80 backdrop-blur-xs text-white text-[11px] font-semibold rounded-md tracking-tight">
-          {video.duration}
+          {video.isLive ? 'LIVE' : video.duration}
         </div>
 
         {/* Quick action buttons on top right of thumbnail */}
