@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YouTube from 'youtube-sr';
+import { parseYouTubeViews } from '@/lib/youtube-views';
 
 // Helper to clean and sanitize title for search queries
 function getSearchKeywords(title: string, channelTitle: string): string {
@@ -65,29 +66,21 @@ async function scrapeRelatedFromWatchPage(videoId: string) {
         v.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId ||
         `c-${vId}`;
 
-      const viewText =
-        v.viewCountText?.simpleText ||
-        v.shortViewCountText?.simpleText ||
-        '100K views';
-
       const uploadedAt =
         v.publishedTimeText?.simpleText ||
+        (Array.isArray(v.publishedTimeText?.runs) ? v.publishedTimeText.runs.map((r: any) => r.text).join('') : '') ||
         'Recommended';
 
       const duration =
         v.lengthText?.simpleText ||
+        (Array.isArray(v.lengthText?.runs) ? v.lengthText.runs.map((r: any) => r.text).join('') : '') ||
         '10:00';
 
       const thumb =
         v.thumbnail?.thumbnails?.[v.thumbnail.thumbnails.length - 1]?.url ||
         `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
 
-      let numericViews = 150000;
-      if (viewText.toLowerCase().includes('m') || viewText.toLowerCase().includes('jt') || viewText.toLowerCase().includes('juta')) {
-        numericViews = parseFloat(viewText) * 1000000;
-      } else if (viewText.toLowerCase().includes('k') || viewText.toLowerCase().includes('rb') || viewText.toLowerCase().includes('ribu')) {
-        numericViews = parseFloat(viewText) * 1000;
-      }
+      const numericViews = parseYouTubeViews(v.viewCountText, v.shortViewCountText, 85000);
 
       results.push({
         id: `yt-${vId}`,
@@ -102,7 +95,7 @@ async function scrapeRelatedFromWatchPage(videoId: string) {
         subscriberCount: '100K+',
         verified: Boolean(v.ownerBadges?.length || v.badges?.length),
         thumbnailUrl: thumb,
-        views: Math.round(numericViews) || 150000,
+        views: numericViews,
         likes: Math.round(numericViews * 0.04) || 6000,
         dislikes: 10,
         uploadedAt,
@@ -173,14 +166,7 @@ async function searchRelatedViaHTML(query: string, currentVideoId: string, limit
 
           const title = v.title?.runs?.[0]?.text || v.title?.simpleText || 'Related Video';
           const channelTitle = v.ownerText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text || 'YouTube Creator';
-          const viewText = v.viewCountText?.simpleText || v.shortViewCountText?.simpleText || '100K views';
-
-          let numericViews = 100000;
-          if (viewText.toLowerCase().includes('m') || viewText.toLowerCase().includes('jt')) {
-            numericViews = parseFloat(viewText) * 1000000;
-          } else if (viewText.toLowerCase().includes('k') || viewText.toLowerCase().includes('rb')) {
-            numericViews = parseFloat(viewText) * 1000;
-          }
+          const numericViews = parseYouTubeViews(v.viewCountText, v.shortViewCountText, 65000);
 
           results.push({
             id: `yt-${vId}`,
@@ -195,7 +181,7 @@ async function searchRelatedViaHTML(query: string, currentVideoId: string, limit
             subscriberCount: '100K+',
             verified: Boolean(v.ownerBadges?.length),
             thumbnailUrl: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
-            views: Math.round(numericViews) || 100000,
+            views: numericViews,
             likes: Math.round(numericViews * 0.04) || 4000,
             dislikes: 8,
             uploadedAt: v.publishedTimeText?.simpleText || 'Recently',
