@@ -1,0 +1,830 @@
+'use client';
+
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { Video, Channel, Comment, User, NotificationItem, PageView, SponsorBlockSettings, SponsorCategory, DeArrowSettings } from '@/types';
+import { INITIAL_VIDEOS, INITIAL_COMMENTS } from '@/data/videos';
+import { INITIAL_CHANNELS } from '@/data/channels';
+import { INITIAL_SHORTS } from '@/data/shorts';
+import { DEFAULT_SPONSORBLOCK_SETTINGS } from '@/lib/sponsorblock';
+import { DEFAULT_DEARROW_SETTINGS } from '@/lib/dearrow';
+
+interface AppContextType {
+  user: User | null;
+  setUser: (user: User | null) => void;
+  signInDemoUser: () => void;
+  signOut: () => void;
+  isLoginModalOpen: boolean;
+  setIsLoginModalOpen: (open: boolean) => void;
+
+  videos: Video[];
+  shorts: Video[];
+  fetchShorts: (query?: string) => Promise<void>;
+  searchResults: Video[];
+  activeVideo: Video | null;
+  setActiveVideo: (video: Video | null) => void;
+  playVideoById: (id: string, fallbackVideo?: Video) => void;
+  playDirectYouTubeVideo: (youtubeIdOrUrl: string) => Promise<void>;
+  addNewVideo: (video: Omit<Video, 'id' | 'views' | 'likes' | 'dislikes' | 'uploadedAt' | 'commentsCount'>) => void;
+  searchYouTube: (query: string) => Promise<Video[]>;
+
+  // Mini Floating PiP Player
+  isMiniPlayerDismissed: boolean;
+  dismissMiniPlayer: () => void;
+  restoreWatchPage: () => void;
+  isPlayerPlaying: boolean;
+  setIsPlayerPlaying: (playing: boolean) => void;
+  togglePlayerPlay: () => void;
+  playerCurrentTime: number;
+  setPlayerCurrentTime: (time: number) => void;
+  playerDuration: number;
+  setPlayerDuration: (dur: number) => void;
+
+  sponsorBlockSettings: SponsorBlockSettings;
+  setSponsorBlockSettings: React.Dispatch<React.SetStateAction<SponsorBlockSettings>>;
+  updateSponsorBlockSettings: (partial: Partial<SponsorBlockSettings>) => void;
+  toggleSponsorCategory: (category: SponsorCategory) => void;
+
+  deArrowSettings: DeArrowSettings;
+  setDeArrowSettings: React.Dispatch<React.SetStateAction<DeArrowSettings>>;
+  updateDeArrowSettings: (partial: Partial<DeArrowSettings>) => void;
+  resetDeArrowSettings: () => void;
+
+  currentView: PageView;
+  setCurrentView: (view: PageView) => void;
+  previousView: PageView;
+  setPreviousView: (view: PageView) => void;
+
+  activeChannel: Channel | null;
+  setActiveChannel: (channel: Channel | null) => void;
+  openChannel: (channelOrTitle: Channel | string, fallbackAvatar?: string) => void;
+  minimizeWatchToPopUp: () => void;
+
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+
+  channels: Channel[];
+  subscribedChannelIds: string[];
+  toggleSubscribe: (channelId: string) => void;
+
+  likedVideoIds: string[];
+  dislikedVideoIds: string[];
+  toggleLikeVideo: (videoId: string) => void;
+  toggleDislikeVideo: (videoId: string) => void;
+
+  watchLaterIds: string[];
+  toggleWatchLater: (videoId: string) => void;
+
+  historyVideoIds: string[];
+  clearHistory: () => void;
+
+  comments: Record<string, Comment[]>;
+  addComment: (videoId: string, text: string) => void;
+  toggleCommentLike: (videoId: string, commentId: string) => void;
+
+  isSidebarOpen: boolean;
+  setIsSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
+
+  isDarkMode: boolean;
+  setIsDarkMode: (dark: boolean) => void;
+  toggleDarkMode: () => void;
+
+  isVoiceModalOpen: boolean;
+  setIsVoiceModalOpen: (open: boolean) => void;
+
+  isMobileSearchOpen: boolean;
+  setIsMobileSearchOpen: (open: boolean) => void;
+
+  isUploadModalOpen: boolean;
+  setIsUploadModalOpen: (open: boolean) => void;
+
+  isLoadingVideos: boolean;
+  setIsLoadingVideos: (loading: boolean) => void;
+
+  shareModalVideo: Video | null;
+  setShareModalVideo: (video: Video | null) => void;
+
+  notifications: NotificationItem[];
+  unreadNotificationCount: number;
+  markNotificationsAsRead: () => void;
+}
+
+const DEFAULT_USER: User = {
+  id: 'user-default',
+  name: 'Developer Account',
+  email: 'developer@nexttube.app',
+  avatar: '/friends/saddam.jpg',
+  handle: '@nexttube_creator',
+};
+
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [
+  {
+    id: 'n-1',
+    title: 'freeCodeCamp.org uploaded: Next.js 15 Full Tutorial & App Router',
+    channelName: 'freeCodeCamp.org',
+    channelAvatar: '/images/freecodecomp.png',
+    timeAgo: '2 hours ago',
+    thumbnail: 'https://i.ytimg.com/vi/1WmNXEVia8I/hqdefault.jpg',
+    isRead: false,
+    videoId: 'v-1',
+  },
+  {
+    id: 'n-2',
+    title: 'Programming with Mosh is live: Master Modern TypeScript & React',
+    channelName: 'Programming with Mosh',
+    channelAvatar: '/images/mos.jpg',
+    timeAgo: '5 hours ago',
+    thumbnail: 'https://i.ytimg.com/vi/Ke90Tje7VS0/hqdefault.jpg',
+    isRead: false,
+    videoId: 'v-4',
+  },
+  {
+    id: 'n-3',
+    title: 'Harvard CS50 posted new lecture materials: CS50 AI Algorithms',
+    channelName: 'Harvard CS50',
+    channelAvatar: '/images/cs.png',
+    timeAgo: '1 day ago',
+    thumbnail: 'https://i.ytimg.com/vi/jS4aFq5-91M/hqdefault.jpg',
+    isRead: true,
+    videoId: 'v-6',
+  },
+];
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(DEFAULT_USER);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [videos, setVideos] = useState<Video[]>(INITIAL_VIDEOS);
+  const [shorts, setShorts] = useState<Video[]>(INITIAL_SHORTS);
+  const [searchResults, setSearchResults] = useState<Video[]>([]);
+  const [activeVideo, setActiveVideo] = useState<Video | null>(null);
+  const [currentView, setCurrentView] = useState<PageView>('home');
+  const [previousView, setPreviousView] = useState<PageView>('home');
+  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
+  const [subscribedChannelIds, setSubscribedChannelIds] = useState<string[]>([
+    'c-freecodecamp',
+    'c-mosh',
+    'c-vercel',
+  ]);
+  const [likedVideoIds, setLikedVideoIds] = useState<string[]>(['v-1', 'v-2']);
+  const [dislikedVideoIds, setDislikedVideoIds] = useState<string[]>([]);
+  const [watchLaterIds, setWatchLaterIds] = useState<string[]>(['v-3', 'v-6']);
+  const [historyVideoIds, setHistoryVideoIds] = useState<string[]>(['v-1', 'v-2', 'v-4']);
+  const [comments, setComments] = useState<Record<string, Comment[]>>(INITIAL_COMMENTS);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [isLoadingVideos, setIsLoadingVideos] = useState<boolean>(false);
+  const [shareModalVideo, setShareModalVideo] = useState<Video | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+
+  // Floating PiP Miniplayer states
+  const [isMiniPlayerDismissed, setIsMiniPlayerDismissed] = useState<boolean>(false);
+  const [isPlayerPlaying, setIsPlayerPlaying] = useState<boolean>(true);
+  const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(0);
+  const [playerDuration, setPlayerDuration] = useState<number>(0);
+
+  const dismissMiniPlayer = useCallback(() => {
+    setIsMiniPlayerDismissed(true);
+  }, []);
+
+  const restoreWatchPage = useCallback(() => {
+    setIsMiniPlayerDismissed(false);
+    setCurrentView('watch');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const togglePlayerPlay = useCallback(() => {
+    setIsPlayerPlaying((prev) => !prev);
+  }, []);
+
+  // Fetch real trending YouTube shorts
+  const fetchShorts = useCallback(async (query: string = '#shorts viral trending') => {
+    try {
+      const res = await fetch(`/api/youtube/shorts?q=${encodeURIComponent(query)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        setShorts((prev) => {
+          const existingIds = new Set(prev.map((s) => s.id));
+          const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
+          return [...prev, ...newItems];
+        });
+      }
+    } catch (e) {
+      console.log('Shorts fetch notice:', e);
+    }
+  }, []);
+
+  // Load initial live shorts on mount
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadLiveShorts = async () => {
+      try {
+        const res = await fetch(`/api/youtube/shorts?q=${encodeURIComponent('#shorts viral trending')}`);
+        if (!res.ok || isCancelled) return;
+        const data = await res.json();
+        if (Array.isArray(data.results) && data.results.length > 0 && !isCancelled) {
+          setShorts((prev) => {
+            const existingIds = new Set(prev.map((s) => s.id));
+            const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
+            return [...prev, ...newItems];
+          });
+        }
+      } catch (e) {
+        console.log('Shorts initial fetch notice:', e);
+      }
+    };
+
+    loadLiveShorts();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // SponsorBlock user preferences
+  const [sponsorBlockSettings, setSponsorBlockSettings] = useState<SponsorBlockSettings>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('nexttube_sponsorblock_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return {
+            ...DEFAULT_SPONSORBLOCK_SETTINGS,
+            ...parsed,
+            categories: {
+              ...DEFAULT_SPONSORBLOCK_SETTINGS.categories,
+              ...(parsed.categories || {}),
+            },
+          };
+        }
+      } catch {}
+    }
+    return DEFAULT_SPONSORBLOCK_SETTINGS;
+  });
+
+  // Save SponsorBlock settings on update
+  const updateSponsorBlockSettings = useCallback((partial: Partial<SponsorBlockSettings>) => {
+    setSponsorBlockSettings((prev) => {
+      const next = { ...prev, ...partial };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('nexttube_sponsorblock_settings', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSponsorCategory = useCallback((category: SponsorCategory) => {
+    setSponsorBlockSettings((prev) => {
+      const next = {
+        ...prev,
+        categories: {
+          ...prev.categories,
+          [category]: !prev.categories[category],
+        },
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('nexttube_sponsorblock_settings', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  // DeArrow user preferences
+  const [deArrowSettings, setDeArrowSettings] = useState<DeArrowSettings>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('nexttube_dearrow_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return {
+            ...DEFAULT_DEARROW_SETTINGS,
+            ...parsed,
+          };
+        }
+      } catch {}
+    }
+    return DEFAULT_DEARROW_SETTINGS;
+  });
+
+  // Save DeArrow settings on update
+  const updateDeArrowSettings = useCallback((partial: Partial<DeArrowSettings>) => {
+    setDeArrowSettings((prev) => {
+      const next = { ...prev, ...partial };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('nexttube_dearrow_settings', JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const resetDeArrowSettings = useCallback(() => {
+    setDeArrowSettings(DEFAULT_DEARROW_SETTINGS);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('nexttube_dearrow_settings', JSON.stringify(DEFAULT_DEARROW_SETTINGS));
+      } catch {}
+    }
+  }, []);
+
+  // Sync dark mode class with HTML element
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  // Load and auto-update live YouTube Trending videos for Home feed
+  const fetchTrendingVideos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/youtube/trending');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        setVideos((prev) => {
+          const trendingIds = new Set(data.results.map((r: Video) => r.id));
+          // Filter out stale placeholder video templates (v-1, etc.) in favor of genuine live YouTube trending
+          const existingNonTrending = prev.filter((v) => !trendingIds.has(v.id) && !v.id.startsWith('v-'));
+          // Put fresh live trending videos at the top
+          return [...data.results, ...existingNonTrending];
+        });
+      }
+    } catch (e) {
+      console.log('Trending sync notice:', e);
+    }
+  }, []);
+
+  // Fetch trending on mount and setup auto-update timer (every 4 minutes)
+  useEffect(() => {
+    const initialTimer = setTimeout(() => {
+      fetchTrendingVideos();
+    }, 10);
+
+    const interval = setInterval(() => {
+      fetchTrendingVideos();
+    }, 4 * 60 * 1000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [fetchTrendingVideos]);
+
+  // Live YouTube search function
+  const searchYouTube = useCallback(async (query: string): Promise<Video[]> => {
+    if (!query.trim()) return [];
+    setIsLoadingVideos(true);
+
+    try {
+      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query.trim())}`);
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      const results: Video[] = Array.isArray(data.results) ? data.results : [];
+
+      setSearchResults(results);
+
+      // Merge into master video list so all actions (Watch, Like, History) seamlessly work
+      setVideos((prev) => {
+        const existingIds = new Set(prev.map((v) => v.id));
+        const newItems = results.filter((r) => !existingIds.has(r.id));
+        return [...prev, ...newItems];
+      });
+
+      return results;
+    } catch (err) {
+      console.error('Failed to perform YouTube search:', err);
+      return [];
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  }, []);
+
+  // Effect to automatically search YouTube whenever searchQuery changes
+  const lastSearchedRef = useRef<string>('');
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      const resetTimer = setTimeout(() => setSearchResults([]), 0);
+      lastSearchedRef.current = '';
+      return () => clearTimeout(resetTimer);
+    }
+
+    if (trimmed === lastSearchedRef.current) return;
+    lastSearchedRef.current = trimmed;
+
+    const timer = setTimeout(() => {
+      searchYouTube(trimmed);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchYouTube]);
+
+  // Effect to fetch real YouTube videos when a specific category is clicked if list is sparse
+  const lastCategoryRef = useRef<string>('All');
+  useEffect(() => {
+    if (selectedCategory === 'All' || searchQuery.trim()) return;
+    if (selectedCategory === lastCategoryRef.current) return;
+    lastCategoryRef.current = selectedCategory;
+
+    // Check if we have at least 6 videos for this category, otherwise fetch real YouTube videos for it!
+    const matchingCount = videos.filter(
+      (v) =>
+        v.category === selectedCategory ||
+        v.tags.some((t) => t.toLowerCase().includes(selectedCategory.toLowerCase()))
+    ).length;
+
+    if (matchingCount < 5) {
+      fetch(`/api/youtube/search?q=${encodeURIComponent(selectedCategory + ' tutorial video')}&limit=12`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data.results) && data.results.length > 0) {
+            setVideos((prev) => {
+              const existingIds = new Set(prev.map((v) => v.id));
+              const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
+              return [...prev, ...newItems];
+            });
+          }
+        })
+        .catch((e) => console.log('Category auto-fill note:', e));
+    }
+  }, [selectedCategory, searchQuery, videos]);
+
+  const signInDemoUser = () => {
+    setUser(DEFAULT_USER);
+    setIsLoginModalOpen(false);
+  };
+
+  const signOut = () => {
+    setUser(null);
+  };
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen((prev) => !prev);
+  };
+
+  const toggleDarkMode = () => {
+    setIsDarkMode((prev) => !prev);
+  };
+
+  const playVideoById = (id: string, fallbackVideo?: Video) => {
+    // Search in videos, shorts, searchResults, or use provided fallback
+    let found = videos.find((v) => v.id === id);
+    if (!found) {
+      found = shorts.find((s) => s.id === id);
+    }
+    if (!found) {
+      found = searchResults.find((v) => v.id === id);
+    }
+    if (!found && fallbackVideo && fallbackVideo.id === id) {
+      found = fallbackVideo;
+      setVideos((prev) => [fallbackVideo, ...prev]);
+    }
+
+    if (!found && id.startsWith('yt-')) {
+      const ytId = id.replace(/^yt-/, '');
+      found = {
+        id,
+        youtubeId: ytId,
+        title: 'YouTube Video',
+        description: 'Watch video seamlessly on NextTube.',
+        channelTitle: 'YouTube Creator',
+        channelId: `c-${ytId}`,
+        channelAvatar: `https://picsum.photos/seed/${ytId}/100/100`,
+        subscriberCount: '100K',
+        verified: true,
+        thumbnailUrl: `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+        views: 25000,
+        likes: 1200,
+        dislikes: 10,
+        uploadedAt: 'Recently',
+        duration: '10:00',
+        category: 'YouTube',
+        tags: ['YouTube', 'Video'],
+        commentsCount: 24,
+      };
+      setVideos((prev) => [found!, ...prev]);
+    }
+
+    if (found) {
+      setActiveVideo(found);
+      setIsMiniPlayerDismissed(false);
+      setIsPlayerPlaying(true);
+      setCurrentView('watch');
+      // Add to history
+      setHistoryVideoIds((prev) => {
+        const filtered = prev.filter((item) => item !== id);
+        return [id, ...filtered];
+      });
+      // Increment view count
+      setVideos((prev) =>
+        prev.map((v) => (v.id === id ? { ...v, views: v.views + 1 } : v))
+      );
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const playDirectYouTubeVideo = async (input: string) => {
+    if (!input.trim()) return;
+    setIsLoadingVideos(true);
+    try {
+      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(input.trim())}`);
+      const data = await res.json();
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        const targetVideo = data.results[0];
+        setVideos((prev) => {
+          const exists = prev.some((v) => v.id === targetVideo.id);
+          return exists ? prev : [targetVideo, ...prev];
+        });
+        setActiveVideo(targetVideo);
+        setIsMiniPlayerDismissed(false);
+        setIsPlayerPlaying(true);
+        setCurrentView('watch');
+        setHistoryVideoIds((prev) => [targetVideo.id, ...prev.filter((id) => id !== targetVideo.id)]);
+      }
+    } catch (e) {
+      console.error('Failed to play direct YouTube link:', e);
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
+  const addNewVideo = (
+    newVid: Omit<Video, 'id' | 'views' | 'likes' | 'dislikes' | 'uploadedAt' | 'commentsCount'>
+  ) => {
+    const newVideoItem: Video = {
+      ...newVid,
+      id: `v-${Date.now()}`,
+      views: 1,
+      likes: 1,
+      dislikes: 0,
+      uploadedAt: 'Just now',
+      commentsCount: 0,
+    };
+    setVideos((prev) => [newVideoItem, ...prev]);
+    setIsUploadModalOpen(false);
+  };
+
+  const toggleSubscribe = (channelId: string) => {
+    setSubscribedChannelIds((prev) => {
+      const exists = prev.includes(channelId);
+      if (exists) {
+        return prev.filter((id) => id !== channelId);
+      } else {
+        return [...prev, channelId];
+      }
+    });
+  };
+
+  const toggleLikeVideo = (videoId: string) => {
+    const isLiked = likedVideoIds.includes(videoId);
+    if (isLiked) {
+      setLikedVideoIds((prev) => prev.filter((id) => id !== videoId));
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, likes: Math.max(0, v.likes - 1) } : v))
+      );
+    } else {
+      setLikedVideoIds((prev) => [...prev, videoId]);
+      setDislikedVideoIds((prev) => prev.filter((id) => id !== videoId));
+      setVideos((prev) =>
+        prev.map((v) => (v.id === videoId ? { ...v, likes: v.likes + 1 } : v))
+      );
+    }
+  };
+
+  const toggleDislikeVideo = (videoId: string) => {
+    const isDisliked = dislikedVideoIds.includes(videoId);
+    if (isDisliked) {
+      setDislikedVideoIds((prev) => prev.filter((id) => id !== videoId));
+    } else {
+      setDislikedVideoIds((prev) => [...prev, videoId]);
+      setLikedVideoIds((prev) => prev.filter((id) => id !== videoId));
+    }
+  };
+
+  const toggleWatchLater = (videoId: string) => {
+    setWatchLaterIds((prev) => {
+      if (prev.includes(videoId)) {
+        return prev.filter((id) => id !== videoId);
+      }
+      return [...prev, videoId];
+    });
+  };
+
+  const clearHistory = () => {
+    setHistoryVideoIds([]);
+  };
+
+  const addComment = (videoId: string, text: string) => {
+    if (!text.trim()) return;
+    const newComment: Comment = {
+      id: `comm-${Date.now()}`,
+      videoId,
+      authorName: user?.name || 'Guest User',
+      authorAvatar: user?.avatar || '/friends/saddam.jpg',
+      text: text.trim(),
+      likes: 0,
+      createdAt: 'Just now',
+    };
+
+    setComments((prev) => ({
+      ...prev,
+      [videoId]: [newComment, ...(prev[videoId] || [])],
+    }));
+
+    setVideos((prev) =>
+      prev.map((v) => (v.id === videoId ? { ...v, commentsCount: v.commentsCount + 1 } : v))
+    );
+  };
+
+  const toggleCommentLike = (videoId: string, commentId: string) => {
+    setComments((prev) => {
+      const vidComments = prev[videoId] || [];
+      const updated = vidComments.map((c) => {
+        if (c.id === commentId) {
+          const isLiked = c.isLiked;
+          return {
+            ...c,
+            isLiked: !isLiked,
+            likes: isLiked ? c.likes - 1 : c.likes + 1,
+          };
+        }
+        return c;
+      });
+      return { ...prev, [videoId]: updated };
+    });
+  };
+
+  const openChannel = useCallback(
+    (channelOrTitle: Channel | string, fallbackAvatar?: string) => {
+      let matchedChannel: Channel | null = null;
+      if (typeof channelOrTitle === 'object' && channelOrTitle !== null) {
+        matchedChannel = channelOrTitle;
+      } else {
+        const titleOrId = String(channelOrTitle).trim();
+        matchedChannel =
+          channels.find(
+            (c) =>
+              c.id === titleOrId ||
+              c.title.toLowerCase() === titleOrId.toLowerCase() ||
+              (c.handle && c.handle.toLowerCase() === titleOrId.toLowerCase())
+          ) || null;
+
+        if (!matchedChannel) {
+          const cleanTitle = titleOrId.replace(/^c-/, '');
+          const handle = `@${cleanTitle.replace(/\s+/g, '').toLowerCase()}`;
+          matchedChannel = {
+            id: `c-${cleanTitle.replace(/\s+/g, '-').toLowerCase()}`,
+            title: cleanTitle,
+            avatar:
+              fallbackAvatar ||
+              `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanTitle)}&backgroundColor=e11d48,2563eb,d97706`,
+            banner: `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80`,
+            handle,
+            subscribers: '120K+',
+            verified: true,
+            isSubscribed: false,
+            videosCount: 45,
+            description: `Official NextTube channel for ${cleanTitle}. Explore exclusive videos, tutorials, and content.`,
+            joinedDate: 'Joined recently',
+            viewsCount: '2.4M views',
+          };
+          setChannels((prev) => [matchedChannel!, ...prev]);
+        }
+      }
+
+      setActiveChannel(matchedChannel);
+      setPreviousView(currentView);
+      setCurrentView('channel');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [channels, currentView]
+  );
+
+  const minimizeWatchToPopUp = useCallback(() => {
+    if (currentView === 'watch') {
+      setIsMiniPlayerDismissed(false);
+      setCurrentView(previousView === 'watch' ? 'home' : previousView);
+    }
+  }, [currentView, previousView]);
+
+  const unreadNotificationCount = notifications.filter((n) => !n.isRead).length;
+
+  const markNotificationsAsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
+  return (
+    <AppContext.Provider
+      value={{
+        user,
+        setUser,
+        signInDemoUser,
+        signOut,
+        isLoginModalOpen,
+        setIsLoginModalOpen,
+        videos,
+        shorts,
+        fetchShorts,
+        searchResults,
+        activeVideo,
+        setActiveVideo,
+        playVideoById,
+        playDirectYouTubeVideo,
+        addNewVideo,
+        searchYouTube,
+        isMiniPlayerDismissed,
+        dismissMiniPlayer,
+        restoreWatchPage,
+        isPlayerPlaying,
+        setIsPlayerPlaying,
+        togglePlayerPlay,
+        playerCurrentTime,
+        setPlayerCurrentTime,
+        playerDuration,
+        setPlayerDuration,
+        currentView,
+        setCurrentView,
+        previousView,
+        setPreviousView,
+        activeChannel,
+        setActiveChannel,
+        openChannel,
+        minimizeWatchToPopUp,
+        selectedCategory,
+        setSelectedCategory,
+        searchQuery,
+        setSearchQuery,
+        channels,
+        subscribedChannelIds,
+        toggleSubscribe,
+        likedVideoIds,
+        dislikedVideoIds,
+        toggleLikeVideo,
+        toggleDislikeVideo,
+        watchLaterIds,
+        toggleWatchLater,
+        historyVideoIds,
+        clearHistory,
+        comments,
+        addComment,
+        toggleCommentLike,
+        isSidebarOpen,
+        setIsSidebarOpen,
+        toggleSidebar,
+        isDarkMode,
+        setIsDarkMode,
+        toggleDarkMode,
+        isVoiceModalOpen,
+        setIsVoiceModalOpen,
+        isMobileSearchOpen,
+        setIsMobileSearchOpen,
+        isUploadModalOpen,
+        setIsUploadModalOpen,
+        isLoadingVideos,
+        setIsLoadingVideos,
+        shareModalVideo,
+        setShareModalVideo,
+        notifications,
+        unreadNotificationCount,
+        markNotificationsAsRead,
+        sponsorBlockSettings,
+        setSponsorBlockSettings,
+        updateSponsorBlockSettings,
+        toggleSponsorCategory,
+        deArrowSettings,
+        setDeArrowSettings,
+        updateDeArrowSettings,
+        resetDeArrowSettings,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};
