@@ -23,6 +23,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { NextTubeLogo } from './NextTubeLogo';
 
 export const Navbar: React.FC = () => {
   const {
@@ -231,18 +232,10 @@ export const Navbar: React.FC = () => {
         <button
           id="navbar-logo-btn"
           onClick={handleGoHome}
-          className="flex items-center gap-2 group select-none touch-manipulation"
+          className="flex items-center group select-none touch-manipulation focus:outline-hidden"
           aria-label="NextTube Home"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/icon-192.png"
-            alt="NextTube Logo"
-            className="w-7 h-7 rounded-lg object-contain shadow-xs group-hover:scale-105 transition-transform"
-          />
-          <span className="font-extrabold text-lg tracking-tight text-gray-900 dark:text-white flex items-center">
-            Next<span className="text-red-600">Tube</span>
-          </span>
+          <NextTubeLogo size="md" />
         </button>
       </div>
 
