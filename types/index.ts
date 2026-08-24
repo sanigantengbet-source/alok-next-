@@ -32,6 +32,16 @@ export interface Comment {
   pinned?: boolean;
 }
 
+export interface Playlist {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  videoCount: number;
+  channelTitle: string;
+  channelId?: string;
+  updatedAt?: string;
+}
+
 export interface Channel {
   id: string;
   title: string;
