@@ -20,6 +20,7 @@ import { VideoCard } from './VideoCard';
 import { VideoCardSkeleton } from './VideoCardSkeleton';
 import { useApp } from '@/context/AppContext';
 import { Video } from '@/types';
+import { filterFreshVideos } from '@/lib/video-freshness';
 
 interface VideoGridProps {
   isLoading?: boolean;
@@ -164,12 +165,57 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
   } else {
     // Standard Home category filter
     if (selectedCategory && selectedCategory !== 'All') {
-      displayedVideos = displayedVideos.filter(
-        (v) =>
-          v.category === selectedCategory ||
-          v.tags.some((t) => t.toLowerCase() === selectedCategory.toLowerCase()) ||
-          v.title.toLowerCase().includes(selectedCategory.toLowerCase())
-      );
+      const cleanCategory = selectedCategory.replace(/^[^\w\s]+/, '').trim().toLowerCase();
+      displayedVideos = displayedVideos.filter((v) => {
+        if (v.category === selectedCategory) return true;
+        const lowerTitle = v.title.toLowerCase();
+        const tags = v.tags ? v.tags.map((t) => t.toLowerCase()) : [];
+
+        if (selectedCategory.includes('Rame') || selectedCategory.includes('Viral')) {
+          return (
+            tags.includes('viral') ||
+            tags.includes('trending') ||
+            tags.includes('rame') ||
+            lowerTitle.includes('viral') ||
+            lowerTitle.includes('rame') ||
+            lowerTitle.includes('trending') ||
+            v.views > 500000
+          );
+        }
+
+        if (selectedCategory === 'TikTok Hits') {
+          return (
+            tags.includes('tiktok') ||
+            tags.includes('viral') ||
+            lowerTitle.includes('tiktok') ||
+            lowerTitle.includes('sound')
+          );
+        }
+
+        if (selectedCategory === 'Live Replay') {
+          return (
+            v.category === 'Live Replay' ||
+            tags.includes('live') ||
+            tags.includes('replay') ||
+            lowerTitle.includes('live') ||
+            lowerTitle.includes('stream')
+          );
+        }
+
+        return (
+          tags.some((t) => t.includes(cleanCategory)) ||
+          lowerTitle.includes(cleanCategory) ||
+          (v.category && v.category.toLowerCase().includes(cleanCategory))
+        );
+      });
+    }
+
+    // Strictly enforce freshness on home feed to remove 1-5 year old stale videos
+    if (!searchQuery.trim()) {
+      const freshOnly = filterFreshVideos(displayedVideos);
+      if (freshOnly.length > 0) {
+        displayedVideos = freshOnly;
+      }
     }
   }
 
