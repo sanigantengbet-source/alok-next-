@@ -260,6 +260,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
             enablejsapi: 1,
             modestbranding: 1,
             rel: 0,
+            iv_load_policy: 3,
             origin: typeof window !== 'undefined' ? window.location.origin : undefined,
           },
           events: {
