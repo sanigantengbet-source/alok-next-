@@ -38,24 +38,34 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const pollerRef = useRef<NodeJS.Timeout | null>(null);
-  const isApiReadyRef = useRef<boolean>(false);
+  const loadedVideoIdRef = useRef<string | null>(null);
   const lastSkippedUUIDRef = useRef<string | null>(null);
-  const currentVideoIdRef = useRef<string>(video.youtubeId);
 
   const [segments, setSegments] = useState<SponsorSegment[]>([]);
   const [isLoadingSegments, setIsLoadingSegments] = useState<boolean>(false);
   const [activeNotice, setActiveNotice] = useState<SkipNotice | null>(null);
-  const [noticeTimer, setNoticeTimer] = useState<NodeJS.Timeout | null>(null);
   const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(0);
   const [playerDuration, setPlayerDuration] = useState<number>(0);
   const [isPlayerReady, setIsPlayerReady] = useState<boolean>(false);
   const [showSegmentsPopover, setShowSegmentsPopover] = useState<boolean>(false);
 
-  // Update current video id ref
+  // Keep references updated for the stable poller loop
+  const segmentsRef = useRef<SponsorSegment[]>([]);
   useEffect(() => {
-    currentVideoIdRef.current = video.youtubeId;
-    lastSkippedUUIDRef.current = null;
-  }, [video.youtubeId]);
+    segmentsRef.current = segments;
+  }, [segments]);
+
+  const settingsRef = useRef<SponsorBlockSettings>(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const onEndedRef = useRef<(() => void) | undefined>(onEnded);
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+
+  const noticeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Format seconds to mm:ss
   const formatTime = (secs: number): string => {
@@ -66,30 +76,31 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
   };
 
   // Trigger non-intrusive visual skip feedback
-  const showSkipFeedback = useCallback(
-    (segment: SponsorSegment) => {
-      if (!settings.showSkipNotice) return;
+  const triggerSkipNotice = useCallback((segment: SponsorSegment) => {
+    if (!settingsRef.current.showSkipNotice) return;
 
-      const catLabel = SponsorBlockService.getCategoryLabel(segment.category);
-      const notice: SkipNotice = {
-        id: `skip-${Date.now()}`,
-        category: segment.category,
-        categoryLabel: catLabel,
-        fromTime: segment.segment[0],
-        toTime: segment.segment[1],
-        segmentUUID: segment.UUID,
-      };
+    const catLabel = SponsorBlockService.getCategoryLabel(segment.category);
+    const notice: SkipNotice = {
+      id: `skip-${Date.now()}`,
+      category: segment.category,
+      categoryLabel: catLabel,
+      fromTime: segment.segment[0],
+      toTime: segment.segment[1],
+      segmentUUID: segment.UUID,
+    };
 
-      setActiveNotice(notice);
+    setActiveNotice(notice);
 
-      if (noticeTimer) clearTimeout(noticeTimer);
-      const timer = setTimeout(() => {
-        setActiveNotice(null);
-      }, 4500);
-      setNoticeTimer(timer);
-    },
-    [settings.showSkipNotice, noticeTimer]
-  );
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => {
+      setActiveNotice(null);
+    }, 4500);
+  }, []);
+
+  const triggerSkipNoticeRef = useRef(triggerSkipNotice);
+  useEffect(() => {
+    triggerSkipNoticeRef.current = triggerSkipNotice;
+  }, [triggerSkipNotice]);
 
   // Undo skipped segment (re-seek back to start of skipped segment)
   const handleUndoSkip = () => {
@@ -97,16 +108,16 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     try {
       if (typeof playerRef.current.seekTo === 'function') {
         playerRef.current.seekTo(activeNotice.fromTime, true);
-        // Temporarily ignore re-skip for this UUID
         lastSkippedUUIDRef.current = activeNotice.segmentUUID;
       }
     } catch {}
     setActiveNotice(null);
   };
 
-  // 1. Fetch SponsorBlock Segments asynchronously when video changes
+  // 1. Fetch SponsorBlock Segments when video changes
   useEffect(() => {
     let isSubscribed = true;
+    lastSkippedUUIDRef.current = null;
 
     const fetchSegments = async () => {
       setIsLoadingSegments(true);
@@ -132,7 +143,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     };
   }, [video.youtubeId]);
 
-  // 2. Continuous playback monitor for SponsorBlock skip check
+  // 2. Playback Polling Handler (Stable ref-based, does not trigger re-renders or resets)
   const startPlaybackPolling = useCallback(() => {
     if (pollerRef.current) clearInterval(pollerRef.current);
 
@@ -146,21 +157,21 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         if (typeof currentTime !== 'number' || isNaN(currentTime)) return;
 
         setPlayerCurrentTime(currentTime);
-        setGlobalCurrentTime(currentTime);
 
         if (typeof playerRef.current.getDuration === 'function') {
           const dur = playerRef.current.getDuration();
           if (typeof dur === 'number' && dur > 0) {
             setPlayerDuration(dur);
-            setGlobalDuration(dur);
           }
         }
 
+        const currentSegments = segmentsRef.current;
+        const currentSettings = settingsRef.current;
+
         // Check if user sought backwards before the last skipped segment
-        if (lastSkippedUUIDRef.current && segments.length > 0) {
-          const lastSeg = segments.find((s) => s.UUID === lastSkippedUUIDRef.current);
+        if (lastSkippedUUIDRef.current && currentSegments.length > 0) {
+          const lastSeg = currentSegments.find((s) => s.UUID === lastSkippedUUIDRef.current);
           if (lastSeg && (currentTime < lastSeg.segment[0] - 2 || currentTime > lastSeg.segment[1] + 2)) {
-            // Reset duplicate protection when outside segment
             lastSkippedUUIDRef.current = null;
           }
         }
@@ -168,25 +179,22 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         // SponsorBlock skip evaluation
         const targetSeg = SponsorBlockService.shouldSkip(
           currentTime,
-          segments,
-          settings,
+          currentSegments,
+          currentSettings,
           lastSkippedUUIDRef.current
         );
 
         if (targetSeg) {
           const targetEnd = targetSeg.segment[1];
-          // Execute skip
           playerRef.current.seekTo(targetEnd, true);
           lastSkippedUUIDRef.current = targetSeg.UUID;
-
-          // Display visual feedback
-          showSkipFeedback(targetSeg);
+          triggerSkipNoticeRef.current(targetSeg);
         }
       } catch {
-        // Suppress any polling error to never crash the player
+        // Suppress polling error
       }
-    }, 250); // Polling every 250ms is efficient and gives sub-second skip precision
-  }, [segments, settings, showSkipFeedback, setGlobalCurrentTime, setGlobalDuration]);
+    }, 250);
+  }, []);
 
   const stopPlaybackPolling = useCallback(() => {
     if (pollerRef.current) {
@@ -195,34 +203,42 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     }
   }, []);
 
-  // 3. Initialize / Update YouTube Player API
+  // 3. Initialize & Load Video in Player (Guarded by loadedVideoIdRef)
   useEffect(() => {
-    const initPlayer = () => {
+    const targetVideoId = video.youtubeId;
+
+    const initOrLoadPlayer = () => {
       if (!window.YT || !window.YT.Player) return;
 
       const playerElement = document.getElementById('nexttube-yt-iframe-player');
       if (!playerElement) return;
 
-      // If player already exists, simply load new video
+      // If player exists, only load new video if it's different from the currently loaded one!
       if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-        try {
-          playerRef.current.loadVideoById({
-            videoId: video.youtubeId,
-            startSeconds: 0,
-          });
-          return;
-        } catch {
-          // If load fails, destroy and recreate
+        if (loadedVideoIdRef.current !== targetVideoId) {
           try {
-            playerRef.current.destroy();
-          } catch {}
-          playerRef.current = null;
+            loadedVideoIdRef.current = targetVideoId;
+            playerRef.current.loadVideoById({
+              videoId: targetVideoId,
+              startSeconds: 0,
+            });
+            return;
+          } catch {
+            try {
+              playerRef.current.destroy();
+            } catch {}
+            playerRef.current = null;
+          }
+        } else {
+          // Already loaded and playing this video, DO NOTHING to avoid restart loop
+          return;
         }
       }
 
       try {
+        loadedVideoIdRef.current = targetVideoId;
         playerRef.current = new window.YT.Player('nexttube-yt-iframe-player', {
-          videoId: video.youtubeId,
+          videoId: targetVideoId,
           playerVars: {
             autoplay: 1,
             enablejsapi: 1,
@@ -252,11 +268,11 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
               } else if (event.data === 0) {
                 setGlobalIsPlaying(false);
                 stopPlaybackPolling();
-                if (onEnded) onEnded();
+                if (onEndedRef.current) onEndedRef.current();
               }
             },
             onError: () => {
-              // Gracefully handle playback error
+              // Ignore error
             },
           },
         });
@@ -273,25 +289,20 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
       firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
 
       window.onYouTubeIframeAPIReady = () => {
-        isApiReadyRef.current = true;
-        initPlayer();
+        initOrLoadPlayer();
       };
     } else if (window.YT && window.YT.Player) {
-      initPlayer();
+      initOrLoadPlayer();
     }
+  }, [video.youtubeId, startPlaybackPolling, stopPlaybackPolling, setGlobalIsPlaying]);
 
-    return () => {
-      stopPlaybackPolling();
-    };
-  }, [video.youtubeId, startPlaybackPolling, stopPlaybackPolling, onEnded, setGlobalIsPlaying]);
-
-  // Clean up timer on unmount
+  // Clean up timer and poller on unmount
   useEffect(() => {
     return () => {
-      if (noticeTimer) clearTimeout(noticeTimer);
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (pollerRef.current) clearInterval(pollerRef.current);
     };
-  }, [noticeTimer]);
+  }, []);
 
   const activeCategoriesCount = segments.filter(
     (s) => settings.categories[s.category] ?? false
