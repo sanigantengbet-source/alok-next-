@@ -36,9 +36,9 @@ interface AppContextType {
   setIsPlayerPlaying: (playing: boolean) => void;
   togglePlayerPlay: () => void;
   playerCurrentTime: number;
-  setPlayerCurrentTime: (time: number) => void;
+  setPlayerCurrentTime: React.Dispatch<React.SetStateAction<number>>;
   playerDuration: number;
-  setPlayerDuration: (dur: number) => void;
+  setPlayerDuration: React.Dispatch<React.SetStateAction<number>>;
 
   sponsorBlockSettings: SponsorBlockSettings;
   setSponsorBlockSettings: React.Dispatch<React.SetStateAction<SponsorBlockSettings>>;
@@ -65,6 +65,10 @@ interface AppContextType {
   setSelectedCategory: (category: string) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  searchHistory: string[];
+  addSearchHistory: (query: string) => void;
+  removeSearchHistory: (query: string) => void;
+  clearSearchHistory: () => void;
 
   channels: Channel[];
   subscribedChannelIds: string[];
@@ -168,6 +172,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchHistory, setSearchHistory] = useState<string[]>([
+    'Next.js 15 Full Course',
+    'React Hooks',
+    'CS50 AI',
+    'TypeScript Crash Course',
+  ]);
   const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
   const [subscribedChannelIds, setSubscribedChannelIds] = useState<string[]>([]);
   const [likedVideoIds, setLikedVideoIds] = useState<string[]>([]);
@@ -175,7 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [watchLaterIds, setWatchLaterIds] = useState<string[]>([]);
   const [historyVideoIds, setHistoryVideoIds] = useState<string[]>([]);
   const [comments, setComments] = useState<Record<string, Comment[]>>(INITIAL_COMMENTS);
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState<boolean>(false);
@@ -192,13 +202,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const hydrateFromIndexedDB = async () => {
       try {
-        const [savedSubs, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark] = await Promise.all([
+        const [savedSubs, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark, savedSearchHist] = await Promise.all([
           getStoredItem<string[]>('subscribedChannelIds', []),
           getStoredItem<string[]>('likedVideoIds', ['v-1', 'v-2']),
           getStoredItem<string[]>('dislikedVideoIds', []),
           getStoredItem<string[]>('watchLaterIds', ['v-3', 'v-6']),
           getStoredItem<string[]>('historyVideoIds', ['v-1', 'v-2', 'v-4']),
           getStoredItem<boolean | null>('isDarkMode', null),
+          getStoredItem<string[]>('searchHistory', [
+            'Next.js 15 Full Course',
+            'React Hooks',
+            'CS50 AI',
+            'TypeScript Crash Course',
+          ]),
         ]);
 
         if (!isCancelled) {
@@ -216,6 +232,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(savedWatchLater)) setWatchLaterIds(savedWatchLater);
           if (Array.isArray(savedHistory)) setHistoryVideoIds(savedHistory);
           if (typeof savedDark === 'boolean') setIsDarkMode(savedDark);
+          if (Array.isArray(savedSearchHist) && savedSearchHist.length > 0) setSearchHistory(savedSearchHist);
+
+          if (typeof window !== 'undefined') {
+            setIsSidebarOpen(window.innerWidth >= 1024);
+          }
 
           setIsHydrated(true);
         }
@@ -262,6 +283,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isHydrated) return;
     setStoredItem('isDarkMode', isDarkMode);
   }, [isDarkMode, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('searchHistory', searchHistory);
+  }, [searchHistory, isHydrated]);
+
+  const addSearchHistory = useCallback((query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    setSearchHistory((prev) => {
+      const filtered = prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
+      return [trimmed, ...filtered].slice(0, 20);
+    });
+  }, []);
+
+  const removeSearchHistory = useCallback((query: string) => {
+    setSearchHistory((prev) => prev.filter((item) => item.toLowerCase() !== query.toLowerCase()));
+  }, []);
+
+  const clearSearchHistory = useCallback(() => {
+    setSearchHistory([]);
+  }, []);
 
   // Floating PiP Miniplayer states
   const [isMiniPlayerDismissed, setIsMiniPlayerDismissed] = useState<boolean>(false);
@@ -592,6 +635,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (found) {
+      if (activeVideo?.id !== id) {
+        setPlayerCurrentTime(0);
+      }
       setActiveVideo(found);
       setIsMiniPlayerDismissed(false);
       setIsPlayerPlaying(true);
@@ -622,6 +668,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const exists = prev.some((v) => v.id === targetVideo.id);
           return exists ? prev : [targetVideo, ...prev];
         });
+        if (activeVideo?.id !== targetVideo.id) {
+          setPlayerCurrentTime(0);
+        }
         setActiveVideo(targetVideo);
         setIsMiniPlayerDismissed(false);
         setIsPlayerPlaying(true);
@@ -895,6 +944,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSelectedCategory,
         searchQuery,
         setSearchQuery,
+        searchHistory,
+        addSearchHistory,
+        removeSearchHistory,
+        clearSearchHistory,
         channels,
         subscribedChannelIds,
         toggleSubscribe,
