@@ -1,0 +1,219 @@
+import { NextRequest, NextResponse } from 'next/server';
+import YouTube from 'youtube-sr';
+import { INITIAL_SHORTS } from '@/data/shorts';
+
+// Helper to scrape shorts directly from YouTube HTML ytInitialData
+async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
+  try {
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    const res = await fetch(searchUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+      },
+      next: { revalidate: 60 },
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const match =
+      html.match(/var ytInitialData = ({[\s\S]*?});<\/script>/) ||
+      html.match(/window\["ytInitialData"\] = ({[\s\S]*?});<\/script>/) ||
+      html.match(/ytInitialData\s*=\s*({.+?});/);
+
+    if (!match || !match[1]) return [];
+
+    const parsed = JSON.parse(match[1]);
+    const results: any[] = [];
+    const seen = new Set<string>();
+
+    function walk(node: any) {
+      if (!node || typeof node !== 'object') return;
+
+      // 1. Modern shortsLockupViewModel
+      if (node.shortsLockupViewModel?.entityId) {
+        const s = node.shortsLockupViewModel;
+        const rawId = s.entityId.replace('shorts-shelf-item-', '').trim();
+        const videoId = rawId.length === 11 ? rawId : (rawId.match(/[a-zA-Z0-9_-]{11}/)?.[0] || '');
+
+        if (videoId && !seen.has(videoId)) {
+          seen.add(videoId);
+          const accessibilityText = s.accessibilityText || '';
+          const parts = accessibilityText.split(',');
+          const title = parts[0]?.trim() || s.overlayMetadata?.primaryText?.content || 'Viral YouTube Short';
+          const viewsText = parts[1]?.replace('– play Short', '').trim() || s.overlayMetadata?.secondaryText?.content || '500K views';
+
+          let numericViews = 450000;
+          if (viewsText.toLowerCase().includes('m')) {
+            numericViews = parseFloat(viewsText) * 1000000;
+          } else if (viewsText.toLowerCase().includes('k') || viewsText.toLowerCase().includes('thousand')) {
+            numericViews = parseFloat(viewsText) * 1000;
+          }
+
+          results.push({
+            id: `short-yt-${videoId}`,
+            youtubeId: videoId,
+            title: title,
+            description: `Viral YouTube Short: ${title}`,
+            channelTitle: 'Viral Shorts Creator',
+            channelId: `c-${videoId}`,
+            channelAvatar: `https://picsum.photos/seed/${videoId}/100/100`,
+            subscriberCount: '500K+',
+            verified: true,
+            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            views: Math.round(numericViews) || 350000,
+            likes: Math.floor(numericViews * 0.08) || 28000,
+            dislikes: 35,
+            uploadedAt: 'Trending',
+            duration: '0:50',
+            category: 'Shorts',
+            tags: ['Shorts', 'Viral', 'Trending'],
+            commentsCount: Math.floor(numericViews * 0.004) || 680,
+          });
+        }
+      }
+
+      // 2. reelItemRenderer (Classic Shorts)
+      if (node.reelItemRenderer?.videoId) {
+        const r = node.reelItemRenderer;
+        const videoId = r.videoId;
+        if (videoId && !seen.has(videoId)) {
+          seen.add(videoId);
+          const title = r.headline?.simpleText || r.headline?.runs?.[0]?.text || 'Trending Short';
+          results.push({
+            id: `short-yt-${videoId}`,
+            youtubeId: videoId,
+            title,
+            description: `YouTube Short: ${title}`,
+            channelTitle: r.ownerText?.runs?.[0]?.text || 'Creator',
+            channelId: `c-${videoId}`,
+            channelAvatar: `https://picsum.photos/seed/${videoId}/100/100`,
+            subscriberCount: '250K',
+            verified: true,
+            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            views: 320000,
+            likes: 24000,
+            dislikes: 18,
+            uploadedAt: 'Trending',
+            duration: '0:45',
+            category: 'Shorts',
+            tags: ['Shorts', 'Viral'],
+            commentsCount: 420,
+          });
+        }
+      }
+
+      // 3. videoRenderer if tagged with shorts
+      if (node.videoRenderer?.videoId) {
+        const v = node.videoRenderer;
+        const videoId = v.videoId;
+        const title = v.title?.runs?.[0]?.text || v.title?.simpleText || '';
+        const duration = v.lengthText?.simpleText || '';
+        const isShortDuration = duration.startsWith('0:') || duration === '1:00' || title.toLowerCase().includes('#short');
+
+        if (videoId && isShortDuration && !seen.has(videoId)) {
+          seen.add(videoId);
+          results.push({
+            id: `short-yt-${videoId}`,
+            youtubeId: videoId,
+            title: title || 'YouTube Short',
+            description: `YouTube Short: ${title}`,
+            channelTitle: v.ownerText?.runs?.[0]?.text || 'Creator',
+            channelId: `c-${videoId}`,
+            channelAvatar:
+              v.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url ||
+              `https://picsum.photos/seed/${videoId}/100/100`,
+            subscriberCount: '100K+',
+            verified: Boolean(v.ownerBadges?.length),
+            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            views: 280000,
+            likes: 21000,
+            dislikes: 12,
+            uploadedAt: v.publishedTimeText?.simpleText || 'Recently',
+            duration: duration || '0:50',
+            category: 'Shorts',
+            tags: ['Shorts', 'Video'],
+            commentsCount: 310,
+          });
+        }
+      }
+
+      for (const key of Object.keys(node)) {
+        walk(node[key]);
+      }
+    }
+
+    walk(parsed);
+    return results;
+  } catch (err) {
+    console.warn('YouTube HTML scraper notice:', err);
+    return [];
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get('q') || '#shorts viral trending';
+
+  // 1. Primary: Direct YouTube Scraper (handles modern shortsLockupViewModel & reelItemRenderer)
+  try {
+    const scraped = await scrapeShortsFromYouTube(q);
+    if (scraped && scraped.length > 0) {
+      return NextResponse.json({ results: scraped, count: scraped.length });
+    }
+  } catch (e) {
+    console.warn('Scraping error:', e);
+  }
+
+  // 2. Secondary fallback: youtube-sr search
+  try {
+    const results = await YouTube.search(q, {
+      limit: 25,
+      type: 'video',
+    });
+
+    const formatted = (results || [])
+      .filter((item: any) => item && item.id && item.title)
+      .map((item: any) => {
+        const videoId = item.id;
+        const thumb =
+          item.thumbnail?.url ||
+          (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : 'https://picsum.photos/480/854');
+
+        return {
+          id: `short-yt-${videoId}`,
+          youtubeId: videoId,
+          title: item.title,
+          description: item.description || `YouTube Short: ${item.title}`,
+          channelTitle: item.channel?.name || 'Creator',
+          channelId: item.channel?.id || `c-${item.channel?.name?.replace(/\s+/g, '-').toLowerCase() || videoId}`,
+          channelAvatar:
+            item.channel?.icon?.url ||
+            `https://picsum.photos/seed/${encodeURIComponent(item.channel?.name || videoId || 'shortcreator')}/100/100`,
+          subscriberCount: item.channel?.subscribers || '500K',
+          verified: Boolean(item.channel?.verified),
+          thumbnailUrl: thumb,
+          views: typeof item.views === 'number' ? item.views : 320000,
+          likes: Math.floor((item.views || 100000) * 0.08) || 12000,
+          dislikes: 24,
+          uploadedAt: item.uploadedAt || 'Trending',
+          duration: item.durationFormatted || '0:50',
+          category: 'Shorts',
+          tags: ['Shorts', 'Viral', item.channel?.name || 'Trending'],
+          commentsCount: Math.floor((item.views || 100000) * 0.005) || 350,
+        };
+      });
+
+    if (formatted.length > 0) {
+      return NextResponse.json({ results: formatted, count: formatted.length });
+    }
+  } catch (error) {
+    console.warn('youtube-sr fallback search notice:', error);
+  }
+
+  // 3. Guaranteed Fallback: Curated active Shorts dataset
+  return NextResponse.json({ results: INITIAL_SHORTS, count: INITIAL_SHORTS.length });
+}
+
