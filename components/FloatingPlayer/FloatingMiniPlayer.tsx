@@ -16,6 +16,7 @@ export const FloatingMiniPlayer: React.FC = () => {
     isPlayerPlaying,
     togglePlayerPlay,
     playerCurrentTime,
+    setPlayerCurrentTime,
     playerDuration,
   } = useApp();
 
@@ -23,10 +24,30 @@ export const FloatingMiniPlayer: React.FC = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [progress, setProgress] = useState(35);
 
+  // Keep playerCurrentTime advancing while miniplayer is actively playing
+  useEffect(() => {
+    if (!activeVideo || currentView === 'watch' || isMiniPlayerDismissed || !isPlayerPlaying) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setPlayerCurrentTime((prev) => {
+        if (playerDuration > 0 && prev >= playerDuration) {
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeVideo, currentView, isMiniPlayerDismissed, isPlayerPlaying, playerDuration, setPlayerCurrentTime]);
+
   // If on watch page or no active video or dismissed, don't show floating player
   if (!activeVideo || currentView === 'watch' || isMiniPlayerDismissed) {
     return null;
   }
+
+  const startSec = Math.max(0, Math.floor(playerCurrentTime || 0));
 
   const calculatedProgress =
     playerDuration > 0
@@ -50,7 +71,7 @@ export const FloatingMiniPlayer: React.FC = () => {
       >
         {isPlayerPlaying ? (
           <iframe
-            src={`https://www.youtube.com/embed/${activeVideo.youtubeId}?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1`}
+            src={`https://www.youtube.com/embed/${activeVideo.youtubeId}?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&start=${startSec}`}
             title={displayTitle || activeVideo.title}
             className="w-full h-full pointer-events-none object-cover"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
