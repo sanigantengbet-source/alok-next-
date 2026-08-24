@@ -1,55 +1,115 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Tv,
-  Sparkles,
-  Flame,
   CheckCircle2,
-  Bell,
-  SlidersHorizontal,
   Compass,
-  Plus,
-  Check,
-  Play,
-  ArrowRight,
-  TrendingUp,
-  UserCheck,
   ExternalLink,
-  Users,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { VideoCard } from '@/components/Feed/VideoCard';
 import { VideoCardSkeleton } from '@/components/Feed/VideoCardSkeleton';
-import { Channel, Video } from '@/types';
+import { Video } from '@/types';
+
+// Helper for clean channel avatar fallback
+const getChannelInitialFallback = (title: string) => {
+  const initial = (title || 'C').charAt(0).toUpperCase();
+  const colors = [
+    'from-red-600 to-rose-700',
+    'from-blue-600 to-indigo-700',
+    'from-emerald-600 to-teal-700',
+    'from-purple-600 to-violet-700',
+    'from-amber-600 to-orange-700',
+    'from-pink-600 to-rose-700',
+  ];
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = title.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colorIndex = Math.abs(hash) % colors.length;
+  return { initial, gradientClass: colors[colorIndex] };
+};
 
 export const SubscriptionsView: React.FC = () => {
   const {
     channels,
     subscribedChannelIds,
-    toggleSubscribe,
     videos,
     openChannel,
     isLoadingVideos,
     setCurrentView,
+    setSelectedCategory,
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [selectedChannelFilter, setSelectedChannelFilter] = useState<string | null>(null);
-  const [showAllChannelsModal, setShowAllChannelsModal] = useState<boolean>(false);
+  const [dynamicChannelVideos, setDynamicChannelVideos] = useState<Video[]>([]);
+  const [isLoadingDynamic, setIsLoadingDynamic] = useState<boolean>(false);
 
   // Subscribed channels list
   const subscribedChannels = useMemo(() => {
     return channels.filter((c) => subscribedChannelIds.includes(c.id));
   }, [channels, subscribedChannelIds]);
 
-  // Suggested popular channels if user wants to discover more
-  const suggestedChannels = useMemo(() => {
-    return channels.filter((c) => !subscribedChannelIds.includes(c.id));
-  }, [channels, subscribedChannelIds]);
+  const selectedChannelObj = useMemo(() => {
+    if (!selectedChannelFilter) return null;
+    return (
+      channels.find(
+        (c) =>
+          c.id === selectedChannelFilter ||
+          c.title.toLowerCase() === selectedChannelFilter.toLowerCase()
+      ) || null
+    );
+  }, [channels, selectedChannelFilter]);
+
+  // Automatically fetch real YouTube videos when a specific channel is selected
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!selectedChannelObj) return;
+
+    const fetchVideosForChannel = async () => {
+      try {
+        setIsLoadingDynamic(true);
+        const res = await fetch(
+          `/api/youtube/search?q=${encodeURIComponent(selectedChannelObj.title)}&limit=16`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.results) && data.results.length > 0 && !isCancelled) {
+            const enriched = data.results.map((v: Video) => ({
+              ...v,
+              channelTitle: selectedChannelObj.title,
+              channelAvatar: selectedChannelObj.avatar || v.channelAvatar,
+              channelId: selectedChannelObj.id,
+            }));
+            setDynamicChannelVideos(enriched);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Channel dynamic video fetch note:', err);
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingDynamic(false);
+        }
+      }
+    };
+
+    fetchVideosForChannel();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedChannelObj]);
 
   // Videos from subscribed channels
   const subscriptionVideos = useMemo(() => {
+    if (selectedChannelObj && dynamicChannelVideos.length > 0) {
+      return dynamicChannelVideos;
+    }
+
     let list = videos.filter((v) => {
       if (selectedChannelFilter) {
         return (
@@ -71,9 +131,17 @@ export const SubscriptionsView: React.FC = () => {
     }
 
     return list;
-  }, [videos, subscribedChannelIds, channels, selectedChannelFilter, activeFilter]);
+  }, [
+    videos,
+    subscribedChannelIds,
+    channels,
+    selectedChannelFilter,
+    selectedChannelObj,
+    dynamicChannelVideos,
+    activeFilter,
+  ]);
 
-  // Recommended videos to supplement the feed (real trending/popular recommendations)
+  // Recommended videos to supplement the feed
   const recommendedVideos = useMemo(() => {
     const subVideoIds = new Set(subscriptionVideos.map((v) => v.id));
     return videos.filter((v) => !subVideoIds.has(v.id)).slice(0, 10);
@@ -92,21 +160,17 @@ export const SubscriptionsView: React.FC = () => {
               Langganan (Subscriptions)
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {subscribedChannels.length} channel diikuti &bull; Update video langsung dari kreator
+              {subscribedChannels.length} channel diikuti &bull; Video terbaru dan rekomendasi terbaik
             </p>
           </div>
         </div>
 
-        {/* Quick manage button */}
+        {/* Quick count pill */}
         {subscribedChannels.length > 0 && (
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowAllChannelsModal(true)}
-              className="text-xs font-semibold px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-[#202020] text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-[#2c2c2c] transition-colors flex items-center gap-1.5"
-            >
-              <Users className="w-3.5 h-3.5 text-red-600" />
-              <span>Kelola {subscribedChannels.length} Saluran</span>
-            </button>
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#202020] text-gray-700 dark:text-gray-300">
+              {subscribedChannels.length} Saluran Diikuti
+            </span>
           </div>
         )}
       </div>
@@ -132,7 +196,11 @@ export const SubscriptionsView: React.FC = () => {
             </button>
 
             {subscribedChannels.map((c) => {
-              const isSelected = selectedChannelFilter === c.id || selectedChannelFilter === c.title;
+              const isSelected =
+                selectedChannelFilter === c.id ||
+                selectedChannelFilter === c.title ||
+                selectedChannelObj?.id === c.id;
+
               return (
                 <div
                   key={c.id}
@@ -145,7 +213,7 @@ export const SubscriptionsView: React.FC = () => {
                       setSelectedChannelFilter(c.id);
                     }
                   }}
-                  title={`Klik untuk filter, klik dua kali untuk buka profile ${c.title}`}
+                  title={`Klik untuk filter, klik lagi untuk buka profil ${c.title}`}
                 >
                   <div
                     className={`relative w-12 h-12 rounded-full p-0.5 transition-all ${
@@ -158,18 +226,24 @@ export const SubscriptionsView: React.FC = () => {
                     <img
                       src={c.avatar}
                       alt={c.title}
-                      className="w-full h-full rounded-full object-cover"
+                      className="w-full h-full rounded-full object-cover bg-gray-100 dark:bg-[#222]"
                       referrerPolicy="no-referrer"
                       onError={(e) => {
-                        e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-                          c.title
-                        )}&backgroundColor=e11d48,2563eb`;
+                        const fallbackInfo = getChannelInitialFallback(c.title);
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent && !parent.querySelector('.fallback-initial')) {
+                          const div = document.createElement('div');
+                          div.className = `fallback-initial w-full h-full rounded-full flex items-center justify-center font-bold text-sm text-white bg-gradient-to-tr ${fallbackInfo.gradientClass}`;
+                          div.innerText = fallbackInfo.initial;
+                          parent.appendChild(div);
+                        }
                       }}
                     />
-                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white dark:border-[#0f0f0f]" />
+                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-red-600 border-2 border-white dark:border-[#0f0f0f]" />
                   </div>
                   <span
-                    className={`text-[11px] truncate max-w-[76px] text-center ${
+                    className={`text-[11px] truncate max-w-[80px] text-center ${
                       isSelected
                         ? 'font-bold text-red-600 dark:text-red-400'
                         : 'text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white'
@@ -180,6 +254,50 @@ export const SubscriptionsView: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* SELECTED CHANNEL HEADER BANNER (If filtered by specific channel) */}
+      {selectedChannelObj && (
+        <div className="mb-6 p-4 rounded-2xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#282828] flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3.5 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={selectedChannelObj.avatar}
+              alt={selectedChannelObj.title}
+              className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-[#333] shrink-0"
+              referrerPolicy="no-referrer"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                  {selectedChannelObj.title}
+                </h3>
+                {selectedChannelObj.verified && (
+                  <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {selectedChannelObj.handle} &bull; {selectedChannelObj.subscribers} subscribers
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => openChannel(selectedChannelObj)}
+              className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Buka Profil Channel</span>
+            </button>
+            <button
+              onClick={() => setSelectedChannelFilter(null)}
+              className="px-3 py-2 rounded-xl border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#222] text-xs font-medium text-gray-700 dark:text-gray-300"
+            >
+              Reset Filter
+            </button>
           </div>
         </div>
       )}
@@ -204,23 +322,34 @@ export const SubscriptionsView: React.FC = () => {
             {tab.label}
           </button>
         ))}
-
-        {selectedChannelFilter && (
-          <button
-            onClick={() => {
-              const matched = channels.find((c) => c.id === selectedChannelFilter);
-              if (matched) openChannel(matched);
-            }}
-            className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 hover:bg-red-100 transition-colors shrink-0 flex items-center gap-1"
-          >
-            <span>Buka Halaman Channel</span>
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        )}
       </div>
 
       {/* PRIMARY SECTION: Videos from Subscriptions */}
-      {isLoadingVideos ? (
+      {subscribedChannels.length === 0 ? (
+        /* Empty State when no channels subscribed */
+        <div className="bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] rounded-3xl p-8 sm:p-12 text-center max-w-lg mx-auto my-12 shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-950/40 text-red-600 mx-auto flex items-center justify-center mb-4 shadow-xs">
+            <Tv className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+            Belum Ada Channel yang Di-Subscribe
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
+            Daftar langganan Anda masih kosong. Silakan jelajahi beranda atau tonton video untuk subscribe channel kreator favorit Anda!
+          </p>
+          <button
+            id="empty-sub-explore-home-btn"
+            onClick={() => {
+              setCurrentView('home');
+              setSelectedCategory('All');
+            }}
+            className="px-6 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-semibold transition-all shadow-md shadow-red-600/20 inline-flex items-center gap-2"
+          >
+            <Compass className="w-4 h-4" />
+            <span>Jelajahi Beranda Sekarang</span>
+          </button>
+        </div>
+      ) : isLoadingVideos || isLoadingDynamic ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 mb-10">
           {Array.from({ length: 8 }).map((_, i) => (
             <VideoCardSkeleton key={`sub-skel-${i}`} id={`sub-skeleton-${i}`} />
@@ -230,7 +359,11 @@ export const SubscriptionsView: React.FC = () => {
         <div className="mb-12">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <span>Video dari Channel Langganan</span>
+              <span>
+                {selectedChannelObj
+                  ? `Video dari ${selectedChannelObj.title}`
+                  : 'Video dari Channel Langganan'}
+              </span>
               <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                 ({subscriptionVideos.length} VT)
               </span>
@@ -247,200 +380,26 @@ export const SubscriptionsView: React.FC = () => {
           </div>
         </div>
       ) : (
-        /* Empty Subscriptions or No Videos Found */
-        <div className="bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] rounded-3xl p-8 text-center max-w-xl mx-auto my-6 shadow-xs">
-          <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 mx-auto flex items-center justify-center mb-4">
-            <Tv className="w-8 h-8" />
+        /* Empty Video filter state */
+        <div className="bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#272727] rounded-3xl p-8 text-center max-w-md mx-auto my-6 shadow-xs">
+          <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-[#252525] text-gray-600 dark:text-gray-300 mx-auto flex items-center justify-center mb-3">
+            <Tv className="w-6 h-6" />
           </div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">
-            {subscribedChannels.length === 0
-              ? 'Belum ada Channel yang Di-Subscribe'
-              : 'Tidak ada video dari filter ini'}
+          <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1">
+            Tidak ada video pada filter ini
           </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
-            Subscribe ke channel favorit Anda di bawah ini untuk mendapatkan rekomendasi video dan update konten terbaru secara otomatis.
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 leading-relaxed">
+            Coba ubah filter atau pilih channel lain dari baris di atas.
           </p>
-        </div>
-      )}
-
-      {/* SUGGESTED POPULAR CHANNELS TO SUBSCRIBE */}
-      {suggestedChannels.length > 0 && (
-        <div className="mb-12 pt-6 border-t border-gray-200 dark:border-[#272727]">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Saluran Populer yang Disarankan</span>
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Temukan dan ikuti kreator terbaik YouTube
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {suggestedChannels.slice(0, 4).map((c) => (
-              <div
-                key={c.id}
-                id={`suggested-chan-${c.id}`}
-                className="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2b2b2b] rounded-2xl p-4 flex flex-col items-center text-center hover:shadow-md transition-all group"
-              >
-                <div
-                  className="w-16 h-16 rounded-full overflow-hidden mb-3 border-2 border-gray-200 dark:border-[#333] cursor-pointer group-hover:scale-105 transition-transform"
-                  onClick={() => openChannel(c)}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={c.avatar}
-                    alt={c.title}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-                        c.title
-                      )}&backgroundColor=e11d48,2563eb`;
-                    }}
-                  />
-                </div>
-
-                <div
-                  className="cursor-pointer mb-1 flex items-center gap-1 justify-center"
-                  onClick={() => openChannel(c)}
-                >
-                  <h3 className="font-bold text-sm text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors line-clamp-1">
-                    {c.title}
-                  </h3>
-                  {c.verified && (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  )}
-                </div>
-
-                <span className="text-[11px] text-gray-500 dark:text-gray-400 mb-4">
-                  {c.subscribers} subscribers
-                </span>
-
-                <div className="w-full flex items-center gap-2">
-                  <button
-                    onClick={() => openChannel(c)}
-                    className="flex-1 py-2 px-2.5 rounded-xl text-xs font-semibold border border-gray-300 dark:border-[#383838] hover:bg-gray-100 dark:hover:bg-[#252525] text-gray-800 dark:text-gray-200 transition-colors"
-                  >
-                    Profil
-                  </button>
-                  <button
-                    id={`suggested-sub-btn-${c.id}`}
-                    onClick={() => toggleSubscribe(c.id)}
-                    className="flex-1 py-2 px-2.5 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Ikuti</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* SECONDARY SECTION: Rekomendasi Video VT untuk Anda */}
-      {recommendedVideos.length > 0 && (
-        <div className="pt-6 border-t border-gray-200 dark:border-[#272727]">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Flame className="w-4 h-4 text-red-500" />
-                <span>Rekomendasi Video untuk Anda</span>
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                VT viral &amp; trending yang mungkin Anda sukai
-              </p>
-            </div>
-          </div>
-
-          <div
-            id="recommended-video-grid"
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8"
+          <button
+            onClick={() => {
+              setActiveFilter('all');
+              setSelectedChannelFilter(null);
+            }}
+            className="px-4 py-2 rounded-xl bg-gray-200 dark:bg-[#282828] text-xs font-semibold text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-[#333] transition-colors"
           >
-            {recommendedVideos.map((video) => (
-              <VideoCard key={`rec-vid-${video.id}`} video={video} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ALL SUBSCRIBED CHANNELS */}
-      {showAllChannelsModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1e1e1e] border border-gray-200 dark:border-[#333] rounded-3xl max-w-xl w-full p-6 shadow-2xl animate-in fade-in">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-200 dark:border-[#333]">
-              <div className="flex items-center gap-2.5">
-                <Users className="w-5 h-5 text-red-600" />
-                <h3 className="font-bold text-lg text-gray-900 dark:text-white">
-                  Semua Saluran yang Diikuti ({subscribedChannels.length})
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowAllChannelsModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm font-semibold"
-              >
-                Tutup
-              </button>
-            </div>
-
-            <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
-              {subscribedChannels.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 dark:bg-[#181818] border border-gray-200 dark:border-[#2b2b2b] hover:border-gray-300 dark:hover:border-[#3d3d3d] transition-all"
-                >
-                  <div
-                    className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
-                    onClick={() => {
-                      setShowAllChannelsModal(false);
-                      openChannel(c);
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={c.avatar}
-                      alt={c.title}
-                      className="w-11 h-11 rounded-full object-cover shrink-0 border border-gray-200 dark:border-[#383838]"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-sm text-gray-900 dark:text-white truncate">
-                          {c.title}
-                        </h4>
-                        {c.verified && (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {c.handle} &bull; {c.subscribers} subscribers
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
-                    <button
-                      onClick={() => {
-                        setShowAllChannelsModal(false);
-                        openChannel(c);
-                      }}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-200 dark:bg-[#2c2c2c] hover:bg-gray-300 dark:hover:bg-[#383838] text-gray-900 dark:text-white transition-colors"
-                    >
-                      Buka
-                    </button>
-                    <button
-                      onClick={() => toggleSubscribe(c.id)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                    >
-                      Batal
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+            Tampilkan Semua Video
+          </button>
         </div>
       )}
     </div>
