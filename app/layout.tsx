@@ -36,12 +36,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="mobile-web-app-capable" content="yes" />
-      </head>
       <body className="bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-gray-100 antialiased min-h-screen transition-colors font-sans selection:bg-red-500 selection:text-white">
         <AppProvider>
           {children}
