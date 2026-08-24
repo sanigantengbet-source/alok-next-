@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YouTube from 'youtube-sr';
 import { INITIAL_SHORTS } from '@/data/shorts';
+import { parseYouTubeViews } from '@/lib/youtube-views';
 
 // Helper to scrape shorts directly from YouTube HTML ytInitialData
 async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
@@ -48,12 +49,7 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
           const title = parts[0]?.trim() || s.overlayMetadata?.primaryText?.content || 'Viral Trending YouTube Short';
           const viewsText = parts[1]?.replace('– play Short', '').trim() || s.overlayMetadata?.secondaryText?.content || '850K views';
 
-          let numericViews = 850000;
-          if (viewsText.toLowerCase().includes('m')) {
-            numericViews = parseFloat(viewsText) * 1000000;
-          } else if (viewsText.toLowerCase().includes('k') || viewsText.toLowerCase().includes('thousand')) {
-            numericViews = parseFloat(viewsText) * 1000;
-          }
+          const numericViews = parseYouTubeViews(parts[1] || s.overlayMetadata?.secondaryText?.content || accessibilityText, null, 750000);
 
           results.push({
             id: `short-yt-${videoId}`,
@@ -66,14 +62,14 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
             subscriberCount: '500K+',
             verified: true,
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: Math.round(numericViews) || 750000,
-            likes: Math.floor(numericViews * 0.09) || 48000,
+            views: numericViews,
+            likes: Math.floor(numericViews * 0.08) || 48000,
             dislikes: 35,
             uploadedAt: 'Trending',
             duration: '0:50',
             category: 'Shorts',
             tags: ['Shorts', 'Viral', 'Trending'],
-            commentsCount: Math.floor(numericViews * 0.004) || 980,
+            commentsCount: Math.floor(numericViews * 0.003) || 980,
           });
         }
       }
@@ -85,6 +81,7 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
         if (videoId && !seen.has(videoId)) {
           seen.add(videoId);
           const title = r.headline?.simpleText || r.headline?.runs?.[0]?.text || 'Trending Short';
+          const numericViews = parseYouTubeViews(r.viewCountText, null, 620000);
           results.push({
             id: `short-yt-${videoId}`,
             youtubeId: videoId,
@@ -96,14 +93,14 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
             subscriberCount: '500K',
             verified: true,
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: 920000,
-            likes: 64000,
+            views: numericViews,
+            likes: Math.floor(numericViews * 0.07) || 40000,
             dislikes: 18,
             uploadedAt: 'Trending',
             duration: '0:45',
             category: 'Shorts',
             tags: ['Shorts', 'Viral', 'Trending'],
-            commentsCount: 620,
+            commentsCount: Math.floor(numericViews * 0.002) || 450,
           });
         }
       }
@@ -118,6 +115,7 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
 
         if (videoId && isShortDuration && !seen.has(videoId)) {
           seen.add(videoId);
+          const numericViews = parseYouTubeViews(v.viewCountText, v.shortViewCountText, 450000);
           results.push({
             id: `short-yt-${videoId}`,
             youtubeId: videoId,
@@ -131,14 +129,14 @@ async function scrapeShortsFromYouTube(query = 'shorts viral trending') {
             subscriberCount: '250K+',
             verified: Boolean(v.ownerBadges?.length),
             thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-            views: 680000,
-            likes: 51000,
+            views: numericViews,
+            likes: Math.floor(numericViews * 0.07) || 30000,
             dislikes: 12,
             uploadedAt: v.publishedTimeText?.simpleText || 'Trending Now',
             duration: duration || '0:50',
             category: 'Shorts',
             tags: ['Shorts', 'Viral', 'Trending'],
-            commentsCount: 510,
+            commentsCount: Math.floor(numericViews * 0.002) || 300,
           });
         }
       }
