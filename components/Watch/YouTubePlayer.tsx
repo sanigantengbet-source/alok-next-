@@ -30,6 +30,7 @@ declare global {
 
 export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, onEnded }) => {
   const {
+    playerCurrentTime: globalCurrentTime,
     setPlayerCurrentTime: setGlobalCurrentTime,
     setPlayerDuration: setGlobalDuration,
     setIsPlayerPlaying: setGlobalIsPlaying,
@@ -41,10 +42,15 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
   const loadedVideoIdRef = useRef<string | null>(null);
   const lastSkippedUUIDRef = useRef<string | null>(null);
 
+  const globalCurrentTimeRef = useRef<number>(globalCurrentTime);
+  useEffect(() => {
+    globalCurrentTimeRef.current = globalCurrentTime;
+  }, [globalCurrentTime]);
+
   const [segments, setSegments] = useState<SponsorSegment[]>([]);
   const [isLoadingSegments, setIsLoadingSegments] = useState<boolean>(false);
   const [activeNotice, setActiveNotice] = useState<SkipNotice | null>(null);
-  const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(0);
+  const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(globalCurrentTime || 0);
   const [playerDuration, setPlayerDuration] = useState<number>(0);
   const [isPlayerReady, setIsPlayerReady] = useState<boolean>(false);
   const [showSegmentsPopover, setShowSegmentsPopover] = useState<boolean>(false);
@@ -157,11 +163,13 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         if (typeof currentTime !== 'number' || isNaN(currentTime)) return;
 
         setPlayerCurrentTime(currentTime);
+        setGlobalCurrentTime(currentTime);
 
         if (typeof playerRef.current.getDuration === 'function') {
           const dur = playerRef.current.getDuration();
           if (typeof dur === 'number' && dur > 0) {
             setPlayerDuration(dur);
+            setGlobalDuration(dur);
           }
         }
 
@@ -194,7 +202,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         // Suppress polling error
       }
     }, 250);
-  }, []);
+  }, [setGlobalCurrentTime, setGlobalDuration]);
 
   const stopPlaybackPolling = useCallback(() => {
     if (pollerRef.current) {
@@ -206,6 +214,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
   // 3. Initialize & Load Video in Player (Guarded by loadedVideoIdRef)
   useEffect(() => {
     const targetVideoId = video.youtubeId;
+    const resumeTime = Math.max(0, Math.floor(globalCurrentTimeRef.current || 0));
 
     const initOrLoadPlayer = () => {
       if (!window.YT || !window.YT.Player) return;
@@ -220,7 +229,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
             loadedVideoIdRef.current = targetVideoId;
             playerRef.current.loadVideoById({
               videoId: targetVideoId,
-              startSeconds: 0,
+              startSeconds: resumeTime,
             });
             return;
           } catch {
@@ -230,7 +239,13 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
             playerRef.current = null;
           }
         } else {
-          // Already loaded and playing this video, DO NOTHING to avoid restart loop
+          // Already loaded and playing this video, check if we need to sync position
+          try {
+            const currentYTTime = playerRef.current.getCurrentTime?.() || 0;
+            if (resumeTime > 0 && Math.abs(currentYTTime - resumeTime) > 2) {
+              playerRef.current.seekTo(resumeTime, true);
+            }
+          } catch {}
           return;
         }
       }
@@ -241,6 +256,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
           videoId: targetVideoId,
           playerVars: {
             autoplay: 1,
+            start: resumeTime,
             enablejsapi: 1,
             modestbranding: 1,
             rel: 0,
@@ -250,9 +266,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
             onReady: (event: any) => {
               setIsPlayerReady(true);
               try {
+                if (resumeTime > 0) {
+                  event.target.seekTo(resumeTime, true);
+                }
                 event.target.playVideo();
                 if (typeof event.target.getDuration === 'function') {
-                  setPlayerDuration(event.target.getDuration());
+                  const dur = event.target.getDuration();
+                  setPlayerDuration(dur);
+                  setGlobalDuration(dur);
                 }
               } catch {}
               startPlaybackPolling();
@@ -294,15 +315,23 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     } else if (window.YT && window.YT.Player) {
       initOrLoadPlayer();
     }
-  }, [video.youtubeId, startPlaybackPolling, stopPlaybackPolling, setGlobalIsPlaying]);
+  }, [video.youtubeId, startPlaybackPolling, stopPlaybackPolling, setGlobalIsPlaying, setGlobalDuration]);
 
-  // Clean up timer and poller on unmount
+  // Clean up timer, poller, and preserve playback position on unmount
   useEffect(() => {
     return () => {
+      if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+        try {
+          const finalTime = playerRef.current.getCurrentTime();
+          if (typeof finalTime === 'number' && !isNaN(finalTime) && finalTime > 0) {
+            setGlobalCurrentTime(finalTime);
+          }
+        } catch {}
+      }
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (pollerRef.current) clearInterval(pollerRef.current);
     };
-  }, []);
+  }, [setGlobalCurrentTime]);
 
   const activeCategoriesCount = segments.filter(
     (s) => settings.categories[s.category] ?? false
