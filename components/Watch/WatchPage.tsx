@@ -44,6 +44,7 @@ const RelatedVideoRow: React.FC<{
           src={displayThumbnail || video.thumbnailUrl}
           alt={displayTitle || video.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+          referrerPolicy="no-referrer"
           onError={(e) => {
             const target = e.currentTarget;
             if (target.src !== video.thumbnailUrl && video.thumbnailUrl) {
@@ -297,6 +298,7 @@ export const WatchPage: React.FC = () => {
                   src={activeVideo.channelAvatar}
                   alt={activeVideo.channelTitle}
                   className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-[#383838] group-hover/chan:opacity-80 transition-opacity"
+                  referrerPolicy="no-referrer"
                   onError={(e) => {
                     e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(activeVideo.channelTitle || 'YT')}&backgroundColor=e11d48,2563eb,d97706`;
                   }}
