@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { PageView } from '@/types';
+import { NextTubeLogo } from '@/components/Navbar/NextTubeLogo';
 
 // Distinctive YouTube Shorts custom SVG icon
 const ShortsNavIcon: React.FC<{ className?: string; isActive?: boolean }> = ({
@@ -203,51 +204,7 @@ export const Sidebar: React.FC = () => {
         </button>
       </div>
 
-      {/* SECTION 3: SUBSCRIPTIONS CHANNELS LIST */}
-      <div className="pt-3 pb-3 border-b border-gray-200 dark:border-[#272727]">
-        <div className="flex items-center justify-between px-3 mb-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Langganan
-          </h4>
-          <button
-            onClick={() => handleNavClick('subscriptions')}
-            className="text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline"
-          >
-            Lihat Semua
-          </button>
-        </div>
-
-        <div className="space-y-1">
-          {channels.slice(0, 7).map((c) => {
-            const isSubbed = subscribedChannelIds.includes(c.id);
-            return (
-              <button
-                key={c.id}
-                id={`sidebar-channel-${c.id}`}
-                onClick={() => openChannel(c)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f] transition-colors text-left"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={c.avatar}
-                  alt={c.title}
-                  className="w-6 h-6 rounded-full object-cover shrink-0 border border-gray-200 dark:border-[#383838]"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    e.currentTarget.src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.title)}&backgroundColor=e11d48,2563eb`;
-                  }}
-                />
-                <span className="truncate flex-1">{c.title}</span>
-                {isSubbed && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* SECTION 4: EXPLORE CATEGORIES */}
+      {/* SECTION 3: EXPLORE CATEGORIES */}
       <div className="pt-3 pb-3 border-b border-gray-200 dark:border-[#272727]">
         <h4 className="px-3 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
           Explore Topics
@@ -318,17 +275,7 @@ export const Sidebar: React.FC = () => {
           <aside className="relative w-72 max-w-[80vw] h-full bg-white dark:bg-[#0f0f0f] border-r border-gray-200 dark:border-[#272727] py-3 px-3 overflow-y-auto select-none z-50 flex flex-col shadow-2xl animate-in slide-in-from-left duration-250">
             {/* Header with Close and Logo */}
             <div className="flex items-center justify-between pb-3 mb-2 px-1 border-b border-gray-200 dark:border-[#272727]">
-              <div className="flex items-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/icon-192.png"
-                  alt="NextTube"
-                  className="w-7 h-7 rounded-lg object-contain shadow-xs"
-                />
-                <span className="font-bold text-base tracking-tighter text-gray-900 dark:text-white">
-                  NextTube
-                </span>
-              </div>
+              <NextTubeLogo size="sm" showText={true} />
 
               <button
                 id="close-mobile-sidebar-btn"
