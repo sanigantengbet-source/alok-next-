@@ -29,6 +29,11 @@ import {
   Image as ImageIcon,
   Layers,
   Volume2,
+  Users,
+  Globe,
+  MessageCircle,
+  Copy,
+  Heart,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { CATEGORY_LABELS } from '@/lib/sponsorblock';
@@ -45,6 +50,7 @@ type SettingsSection =
   | 'history'
   | 'notifications'
   | 'backup'
+  | 'community'
   | 'updates';
 
 export const SettingsView: React.FC = () => {
@@ -78,6 +84,15 @@ export const SettingsView: React.FC = () => {
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  const handleCopyLink = (url: string, name: string) => {
+    try {
+      navigator.clipboard.writeText(url);
+      setCopiedLink(name);
+      setTimeout(() => setCopiedLink(null), 2500);
+    } catch {}
+  };
 
   const categoriesList: { key: SponsorCategory; title: string; defaultOn: boolean }[] = [
     { key: 'sponsor', title: 'Sponsor', defaultOn: true },
@@ -623,6 +638,232 @@ export const SettingsView: React.FC = () => {
           </div>
         );
 
+      case 'community':
+        return (
+          <div className="space-y-4 animate-in fade-in duration-200">
+            {/* Header intro card - Clean 2-color NextTube theme */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#262626] shadow-xs">
+              <div className="flex items-center gap-3.5 mb-2">
+                <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      Komunitas Resmi SANN404
+                    </h3>
+                    <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-600/10 text-red-600 dark:text-red-400 rounded-md border border-red-600/20">
+                      Official
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    SANN404 FORUM GROUP &bull; NextTube Community Hub
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed mt-2.5">
+                Bergabunglah dengan komunitas resmi kami untuk mendapatkan rilis terbaru, pembaruan fitur, bantuan teknis, serta berdiskusi bersama pengembang dan sesama pengguna.
+              </p>
+            </div>
+
+            {/* Social Links List - Clean, consistent 2-color styling */}
+            <div className="space-y-3">
+              {/* 1. Instagram */}
+              <div
+                id="community-link-instagram"
+                className="p-4 rounded-2xl bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#262626] hover:border-red-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
+              >
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202020] border border-gray-200 dark:border-[#303030] text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                    <span className="font-bold text-xs tracking-tight">IG</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Instagram Resmi
+                      </h4>
+                      <span className="px-2 py-0.5 text-[10px] font-medium bg-red-600/10 text-red-600 dark:text-red-400 rounded-md border border-red-600/20">
+                        @sannnforums.id
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Ikuti kabar dan update resmi di Instagram kami
+                    </p>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500 font-mono select-all block mt-0.5">
+                      https://www.instagram.com/sannnforums.id
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => handleCopyLink('https://www.instagram.com/sannnforums.id', 'Instagram')}
+                    className="p-2 rounded-xl border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#252525] text-gray-700 dark:text-gray-300 text-xs transition-colors"
+                    title="Salin Tautan"
+                  >
+                    {copiedLink === 'Instagram' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <a
+                    href="https://www.instagram.com/sannnforums.id"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span>Kunjungi</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* 2. GitHub */}
+              <div
+                id="community-link-github"
+                className="p-4 rounded-2xl bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#262626] hover:border-red-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
+              >
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202020] border border-gray-200 dark:border-[#303030] text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                    <Code2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        GitHub Project
+                      </h4>
+                      <span className="px-2 py-0.5 text-[10px] font-medium bg-red-600/10 text-red-600 dark:text-red-400 rounded-md border border-red-600/20">
+                        @sannnproject
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Repository sumber kode, kontribusi, dan issue tracker
+                    </p>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500 font-mono select-all block mt-0.5">
+                      https://github.com/sannnproject
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => handleCopyLink('https://github.com/sannnproject', 'GitHub')}
+                    className="p-2 rounded-xl border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#252525] text-gray-700 dark:text-gray-300 text-xs transition-colors"
+                    title="Salin Tautan"
+                  >
+                    {copiedLink === 'GitHub' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <a
+                    href="https://github.com/sannnproject"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span>Kunjungi</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* 3. TikTok */}
+              <div
+                id="community-link-tiktok"
+                className="p-4 rounded-2xl bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#262626] hover:border-red-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
+              >
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202020] border border-gray-200 dark:border-[#303030] text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                    <span className="font-bold text-xs tracking-tight">TT</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        TikTok Official
+                      </h4>
+                      <span className="px-2 py-0.5 text-[10px] font-medium bg-red-600/10 text-red-600 dark:text-red-400 rounded-md border border-red-600/20">
+                        @sannforums
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Video singkat, tips, panduan fitur, dan update cepat
+                    </p>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500 font-mono select-all block mt-0.5">
+                      https://www.tiktok.com/@sannforums
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => handleCopyLink('https://www.tiktok.com/@sannforums', 'TikTok')}
+                    className="p-2 rounded-xl border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#252525] text-gray-700 dark:text-gray-300 text-xs transition-colors"
+                    title="Salin Tautan"
+                  >
+                    {copiedLink === 'TikTok' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <a
+                    href="https://www.tiktok.com/@sannforums"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span>Kunjungi</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* 4. WhatsApp Channel */}
+              <div
+                id="community-link-whatsapp"
+                className="p-4 rounded-2xl bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#262626] hover:border-red-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs"
+              >
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202020] border border-gray-200 dark:border-[#303030] text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                    <MessageCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Saluran WhatsApp Resmi
+                      </h4>
+                      <span className="px-2 py-0.5 text-[10px] font-medium bg-red-600/10 text-red-600 dark:text-red-400 rounded-md border border-red-600/20">
+                        SANN404 Channel
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Siaran notifikasi langsung, rilis aplikasi terbaru, dan link unduhan
+                    </p>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500 font-mono select-all break-all block mt-0.5">
+                      https://whatsapp.com/channel/0029Vb6ukqnHQbS4mKP0j80L
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => handleCopyLink('https://whatsapp.com/channel/0029Vb6ukqnHQbS4mKP0j80L', 'WhatsApp')}
+                    className="p-2 rounded-xl border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#252525] text-gray-700 dark:text-gray-300 text-xs transition-colors"
+                    title="Salin Tautan"
+                  >
+                    {copiedLink === 'WhatsApp' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <a
+                    href="https://whatsapp.com/channel/0029Vb6ukqnHQbS4mKP0j80L"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span>Gabung</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Credits Badge */}
+            <div className="text-center pt-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
+              <p>Dikembangkan dengan penuh dedikasi oleh <strong className="text-gray-700 dark:text-gray-300">SANN404 FORUM GROUP</strong></p>
+            </div>
+          </div>
+        );
+
       default:
         return null;
     }
@@ -648,6 +889,8 @@ export const SettingsView: React.FC = () => {
         return 'Notifikasi';
       case 'backup':
         return 'Cadangkan dan pulihkan';
+      case 'community':
+        return 'Komunitas';
       case 'updates':
         return 'Periksa untuk pembaruan';
       default:
@@ -846,12 +1089,31 @@ export const SettingsView: React.FC = () => {
             </div>
           </button>
 
+          {/* 10. Komunitas (Community) */}
+          <button
+            id="settings-item-community"
+            onClick={() => setActiveSection('community')}
+            className="w-full flex items-center gap-4.5 py-4 px-2 hover:bg-gray-50 dark:hover:bg-[#181818] rounded-2xl transition-colors text-left group"
+          >
+            <div className="w-6 h-6 flex items-center justify-center text-gray-700 dark:text-gray-300 shrink-0">
+              <Users className="w-5.5 h-5.5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors leading-tight">
+                Komunitas
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                Instagram, GitHub, TikTok, Saluran WhatsApp
+              </p>
+            </div>
+          </button>
+
           {/* Divider */}
           <div className="py-2">
             <div className="border-t border-gray-100 dark:border-[#222]" />
           </div>
 
-          {/* 10. Periksa untuk Pembaruan */}
+          {/* 11. Periksa untuk Pembaruan */}
           <button
             id="settings-item-updates"
             onClick={() => setActiveSection('updates')}
