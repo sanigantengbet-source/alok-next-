@@ -8,6 +8,7 @@ import { CategoryBar } from '@/components/Feed/CategoryBar';
 import { VideoGrid } from '@/components/Feed/VideoGrid';
 import { WatchPage } from '@/components/Watch/WatchPage';
 import { ShortsView } from '@/components/Shorts/ShortsView';
+import { SubscriptionsView } from '@/components/Subscriptions/SubscriptionsView';
 import { SettingsView } from '@/components/Settings/SettingsView';
 import { ChannelView } from '@/components/Channel/ChannelView';
 import { FloatingMiniPlayer } from '@/components/FloatingPlayer/FloatingMiniPlayer';
@@ -22,6 +23,7 @@ export default function Home() {
 
   const isWatchMode = currentView === 'watch' && activeVideo !== null;
   const isShortsMode = currentView === 'shorts';
+  const isSubscriptionsMode = currentView === 'subscriptions';
   const isSettingsMode = currentView === 'settings';
   const isChannelMode = currentView === 'channel';
 
@@ -41,6 +43,8 @@ export default function Home() {
             <WatchPage />
           ) : isShortsMode ? (
             <ShortsView />
+          ) : isSubscriptionsMode ? (
+            <SubscriptionsView />
           ) : isSettingsMode ? (
             <SettingsView />
           ) : isChannelMode ? (
