@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Home, Flame, Search, Settings } from 'lucide-react';
+import { Home, Flame, Tv, Settings } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { PageView } from '@/types';
 
@@ -30,10 +30,9 @@ export const BottomNav: React.FC = () => {
     currentView,
     setCurrentView,
     activeVideo,
-    setActiveVideo,
     setSelectedCategory,
     setSearchQuery,
-    setIsMobileSearchOpen,
+    subscribedChannelIds,
   } = useApp();
 
   const handleNavClick = (view: PageView) => {
@@ -62,13 +61,13 @@ export const BottomNav: React.FC = () => {
       onClick: () => handleNavClick('shorts'),
     },
     {
-      id: 'bottom-nav-search',
-      label: 'Search',
-      icon: Search,
-      isAction: true,
-      onClick: () => {
-        setIsMobileSearchOpen(true);
-      },
+      id: 'bottom-nav-subscriptions',
+      label: 'Langganan',
+      icon: Tv,
+      view: 'subscriptions' as PageView,
+      isActive: currentView === 'subscriptions',
+      badge: subscribedChannelIds.length > 0 ? subscribedChannelIds.length : null,
+      onClick: () => handleNavClick('subscriptions'),
     },
     {
       id: 'bottom-nav-trending',
@@ -120,6 +119,10 @@ export const BottomNav: React.FC = () => {
                 ) : Icon ? (
                   <Icon className={`w-5 h-5 ${active ? 'stroke-[2.5]' : 'stroke-[1.8]'}`} />
                 ) : null}
+
+                {item.badge && !active && (
+                  <span className="absolute -top-1 -right-2 w-2 h-2 rounded-full bg-red-600" />
+                )}
               </div>
               <span className="text-[10px] tracking-tight mt-1 leading-none font-medium">
                 {item.label}
