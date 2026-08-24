@@ -10,12 +10,10 @@
     </filter>
   </defs>
 
-  <!-- Red Squircle Badge -->
   <g filter="url(#logoDropShadow)">
     <rect x="20" y="25" width="150" height="150" rx="38" fill="url(#logoBgGrad)"/>
   </g>
 
-  <!-- Folded Play Icon -->
   <g transform="translate(-52, -28) scale(0.64)">
     <rect x="175" y="165" width="46" height="182" rx="23" fill="#FFFFFF"/>
     <path d="M198 165 C208 165, 218 171, 226 178 L330 240 C345 249, 345 263, 330 272 L215 342 C204 349, 198 343, 198 332 Z" fill="#FFFFFF"/>
@@ -23,8 +21,7 @@
     <path d="M198 165 L330 256 L198 245 Z" fill="#FFFFFF"/>
   </g>
 
-  <!-- NextTube Typography -->
   <text x="195" y="126" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="78" letter-spacing="-1.5">
-    <tspan fill="#111111" class="dark-text">Next</tspan><tspan fill="#FF1A38">Tube</tspan>
+    <tspan fill="#111111">Next</tspan><tspan fill="#FF1A38">Tube</tspan>
   </text>
 </svg>
