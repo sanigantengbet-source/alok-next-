@@ -8,6 +8,7 @@ import { INITIAL_SHORTS } from '@/data/shorts';
 import { DEFAULT_SPONSORBLOCK_SETTINGS } from '@/lib/sponsorblock';
 import { DEFAULT_DEARROW_SETTINGS } from '@/lib/dearrow';
 import { getStoredItem, setStoredItem } from '@/lib/indexedDB';
+import { filterFreshVideos, isFreshAndHotVideo } from '@/lib/video-freshness';
 
 interface AppContextType {
   user: User | null;
@@ -202,8 +203,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const hydrateFromIndexedDB = async () => {
       try {
-        const [savedSubs, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark, savedSearchHist] = await Promise.all([
+        const [savedSubs, savedCustomChannels, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark, savedSearchHist] = await Promise.all([
           getStoredItem<string[]>('subscribedChannelIds', []),
+          getStoredItem<Channel[]>('channels', INITIAL_CHANNELS),
           getStoredItem<string[]>('likedVideoIds', ['v-1', 'v-2']),
           getStoredItem<string[]>('dislikedVideoIds', []),
           getStoredItem<string[]>('watchLaterIds', ['v-3', 'v-6']),
@@ -218,15 +220,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (!isCancelled) {
-          if (Array.isArray(savedSubs)) {
-            setSubscribedChannelIds(savedSubs);
-            setChannels((prev) =>
-              prev.map((c) => ({
-                ...c,
-                isSubscribed: savedSubs.includes(c.id),
-              }))
-            );
+          const subs = Array.isArray(savedSubs) ? savedSubs : [];
+          setSubscribedChannelIds(subs);
+
+          // Merge default channels with saved channels from IndexedDB
+          const channelMap = new Map<string, Channel>();
+          INITIAL_CHANNELS.forEach((c) => channelMap.set(c.id, { ...c, isSubscribed: subs.includes(c.id) }));
+          if (Array.isArray(savedCustomChannels)) {
+            savedCustomChannels.forEach((c) => {
+              if (c && c.id) {
+                channelMap.set(c.id, {
+                  ...c,
+                  isSubscribed: subs.includes(c.id),
+                });
+              }
+            });
           }
+          setChannels(Array.from(channelMap.values()));
+
           if (Array.isArray(savedLikes)) setLikedVideoIds(savedLikes);
           if (Array.isArray(savedDislikes)) setDislikedVideoIds(savedDislikes);
           if (Array.isArray(savedWatchLater)) setWatchLaterIds(savedWatchLater);
@@ -258,6 +269,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isHydrated) return;
     setStoredItem('subscribedChannelIds', subscribedChannelIds);
   }, [subscribedChannelIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('channels', channels);
+  }, [channels, isHydrated]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -479,12 +495,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data.results) && data.results.length > 0) {
+        const freshTrending: Video[] = filterFreshVideos(data.results as Video[]);
         setVideos((prev) => {
-          const trendingIds = new Set(data.results.map((r: Video) => r.id));
-          // Filter out stale placeholder video templates (v-1, etc.) in favor of genuine live YouTube trending
-          const existingNonTrending = prev.filter((v) => !trendingIds.has(v.id) && !v.id.startsWith('v-'));
-          // Put fresh live trending videos at the top
-          return [...data.results, ...existingNonTrending];
+          const trendingIds = new Set(freshTrending.map((r: Video) => r.id));
+          // Strictly purge old/stale videos and placeholders, keeping only fresh videos
+          const existingFreshNonTrending = prev.filter(
+            (v) => !trendingIds.has(v.id) && !v.id.startsWith('v-') && isFreshAndHotVideo(v)
+          );
+          return [...freshTrending, ...existingFreshNonTrending];
         });
       }
     } catch (e) {
@@ -564,14 +582,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (selectedCategory === lastCategoryRef.current) return;
     lastCategoryRef.current = selectedCategory;
 
-    fetch(`/api/youtube/search?q=${encodeURIComponent(selectedCategory + ' video')}&limit=12`)
+    let targetQuery = `${selectedCategory} video terbaru`;
+    if (selectedCategory === '🔥 Rame & Viral' || selectedCategory.includes('Rame')) {
+      targetQuery = 'video viral yang lagi rame hari ini';
+    } else if (selectedCategory === 'TikTok Hits') {
+      targetQuery = 'viral tiktok hits terbaru indonesia';
+    } else if (selectedCategory === 'Trending') {
+      targetQuery = 'trending youtube indonesia hari ini';
+    } else if (selectedCategory === 'Live Replay') {
+      targetQuery = 'live stream replay viral';
+    }
+
+    fetch(`/api/youtube/search?q=${encodeURIComponent(targetQuery)}&limit=16`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.results) && data.results.length > 0) {
           setVideos((prev) => {
             const existingIds = new Set(prev.map((v) => v.id));
             const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
-            return [...prev, ...newItems];
+            return [...newItems, ...prev];
           });
         }
       })
@@ -702,23 +731,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleSubscribe = (channelId: string) => {
     if (!channelId) return;
+
+    let willBeSubscribed = false;
+
     setSubscribedChannelIds((prev) => {
       const exists = prev.includes(channelId);
+      willBeSubscribed = !exists;
       const next = exists ? prev.filter((id) => id !== channelId) : [...prev, channelId];
       if (typeof window !== 'undefined') {
         try {
+          localStorage.setItem('nexttube_subscribedChannelIds', JSON.stringify(next));
           localStorage.setItem('nexttube_subscriptions', JSON.stringify(next));
         } catch {}
       }
+      setStoredItem('subscribedChannelIds', next);
       return next;
     });
 
-    setChannels((prev) =>
-      prev.map((c) => (c.id === channelId ? { ...c, isSubscribed: !c.isSubscribed } : c))
-    );
+    setChannels((prev) => {
+      const existingIndex = prev.findIndex(
+        (c) => c.id === channelId || c.title.toLowerCase() === channelId.toLowerCase()
+      );
+
+      let nextChannels: Channel[];
+      if (existingIndex >= 0) {
+        nextChannels = prev.map((c, i) =>
+          i === existingIndex ? { ...c, isSubscribed: !c.isSubscribed } : c
+        );
+      } else {
+        // Find matching video or active context to synthesize channel
+        const matchingVideo =
+          videos.find((v) => v.channelId === channelId || v.channelTitle.toLowerCase() === channelId.toLowerCase()) ||
+          (activeVideo && (activeVideo.channelId === channelId || activeVideo.channelTitle.toLowerCase() === channelId.toLowerCase()) ? activeVideo : null);
+
+        const cleanTitle = matchingVideo?.channelTitle || channelId.replace(/^c-/, '');
+        const newChannel: Channel = {
+          id: channelId,
+          title: cleanTitle,
+          avatar:
+            matchingVideo?.channelAvatar ||
+            `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanTitle)}&backgroundColor=e11d48,2563eb,d97706`,
+          banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=2560&auto=format&fit=crop&q=80',
+          handle: `@${cleanTitle.replace(/\s+/g, '').toLowerCase()}`,
+          subscribers: matchingVideo?.subscriberCount || '120K+',
+          verified: matchingVideo?.verified ?? true,
+          isSubscribed: true,
+          videosCount: 24,
+          description: `Official NextTube channel for ${cleanTitle}.`,
+          joinedDate: 'Joined recently',
+          viewsCount: '1.5M views',
+        };
+        nextChannels = [newChannel, ...prev];
+      }
+
+      setStoredItem('channels', nextChannels);
+      return nextChannels;
+    });
 
     setActiveChannel((prev) => {
-      if (prev && prev.id === channelId) {
+      if (prev && (prev.id === channelId || prev.title.toLowerCase() === channelId.toLowerCase())) {
         return { ...prev, isSubscribed: !prev.isSubscribed };
       }
       return prev;
