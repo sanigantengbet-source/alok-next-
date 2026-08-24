@@ -7,6 +7,7 @@ import { INITIAL_CHANNELS } from '@/data/channels';
 import { INITIAL_SHORTS } from '@/data/shorts';
 import { DEFAULT_SPONSORBLOCK_SETTINGS } from '@/lib/sponsorblock';
 import { DEFAULT_DEARROW_SETTINGS } from '@/lib/dearrow';
+import { getStoredItem, setStoredItem } from '@/lib/indexedDB';
 
 interface AppContextType {
   user: User | null;
@@ -168,15 +169,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
-  const [subscribedChannelIds, setSubscribedChannelIds] = useState<string[]>([
-    'c-freecodecamp',
-    'c-mosh',
-    'c-vercel',
-  ]);
-  const [likedVideoIds, setLikedVideoIds] = useState<string[]>(['v-1', 'v-2']);
+  const [subscribedChannelIds, setSubscribedChannelIds] = useState<string[]>([]);
+  const [likedVideoIds, setLikedVideoIds] = useState<string[]>([]);
   const [dislikedVideoIds, setDislikedVideoIds] = useState<string[]>([]);
-  const [watchLaterIds, setWatchLaterIds] = useState<string[]>(['v-3', 'v-6']);
-  const [historyVideoIds, setHistoryVideoIds] = useState<string[]>(['v-1', 'v-2', 'v-4']);
+  const [watchLaterIds, setWatchLaterIds] = useState<string[]>([]);
+  const [historyVideoIds, setHistoryVideoIds] = useState<string[]>([]);
   const [comments, setComments] = useState<Record<string, Comment[]>>(INITIAL_COMMENTS);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
@@ -186,6 +183,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoadingVideos, setIsLoadingVideos] = useState<boolean>(false);
   const [shareModalVideo, setShareModalVideo] = useState<Video | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+
+  // Initialize and load persistent user data from IndexedDB
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const hydrateFromIndexedDB = async () => {
+      try {
+        const [savedSubs, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark] = await Promise.all([
+          getStoredItem<string[]>('subscribedChannelIds', []),
+          getStoredItem<string[]>('likedVideoIds', ['v-1', 'v-2']),
+          getStoredItem<string[]>('dislikedVideoIds', []),
+          getStoredItem<string[]>('watchLaterIds', ['v-3', 'v-6']),
+          getStoredItem<string[]>('historyVideoIds', ['v-1', 'v-2', 'v-4']),
+          getStoredItem<boolean | null>('isDarkMode', null),
+        ]);
+
+        if (!isCancelled) {
+          if (Array.isArray(savedSubs)) {
+            setSubscribedChannelIds(savedSubs);
+            setChannels((prev) =>
+              prev.map((c) => ({
+                ...c,
+                isSubscribed: savedSubs.includes(c.id),
+              }))
+            );
+          }
+          if (Array.isArray(savedLikes)) setLikedVideoIds(savedLikes);
+          if (Array.isArray(savedDislikes)) setDislikedVideoIds(savedDislikes);
+          if (Array.isArray(savedWatchLater)) setWatchLaterIds(savedWatchLater);
+          if (Array.isArray(savedHistory)) setHistoryVideoIds(savedHistory);
+          if (typeof savedDark === 'boolean') setIsDarkMode(savedDark);
+
+          setIsHydrated(true);
+        }
+      } catch (e) {
+        console.warn('IndexedDB initial load note:', e);
+        if (!isCancelled) setIsHydrated(true);
+      }
+    };
+
+    hydrateFromIndexedDB();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  // Save changes to IndexedDB when user updates state
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('subscribedChannelIds', subscribedChannelIds);
+  }, [subscribedChannelIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('likedVideoIds', likedVideoIds);
+  }, [likedVideoIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('dislikedVideoIds', dislikedVideoIds);
+  }, [dislikedVideoIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('watchLaterIds', watchLaterIds);
+  }, [watchLaterIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('historyVideoIds', historyVideoIds);
+  }, [historyVideoIds, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    setStoredItem('isDarkMode', isDarkMode);
+  }, [isDarkMode, isHydrated]);
 
   // Floating PiP Miniplayer states
   const [isMiniPlayerDismissed, setIsMiniPlayerDismissed] = useState<boolean>(false);
@@ -445,28 +521,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (selectedCategory === lastCategoryRef.current) return;
     lastCategoryRef.current = selectedCategory;
 
-    // Check if we have at least 6 videos for this category, otherwise fetch real YouTube videos for it!
-    const matchingCount = videos.filter(
-      (v) =>
-        v.category === selectedCategory ||
-        v.tags.some((t) => t.toLowerCase().includes(selectedCategory.toLowerCase()))
-    ).length;
-
-    if (matchingCount < 5) {
-      fetch(`/api/youtube/search?q=${encodeURIComponent(selectedCategory + ' tutorial video')}&limit=12`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data.results) && data.results.length > 0) {
-            setVideos((prev) => {
-              const existingIds = new Set(prev.map((v) => v.id));
-              const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
-              return [...prev, ...newItems];
-            });
-          }
-        })
-        .catch((e) => console.log('Category auto-fill note:', e));
-    }
-  }, [selectedCategory, searchQuery, videos]);
+    fetch(`/api/youtube/search?q=${encodeURIComponent(selectedCategory + ' video')}&limit=12`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.results) && data.results.length > 0) {
+          setVideos((prev) => {
+            const existingIds = new Set(prev.map((v) => v.id));
+            const newItems = data.results.filter((r: Video) => !existingIds.has(r.id));
+            return [...prev, ...newItems];
+          });
+        }
+      })
+      .catch((e) => console.log('Category auto-fill note:', e));
+  }, [selectedCategory, searchQuery]);
 
   const signInDemoUser = () => {
     setUser(DEFAULT_USER);
