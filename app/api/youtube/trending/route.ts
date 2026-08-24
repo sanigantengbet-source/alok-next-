@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import YouTube from 'youtube-sr';
+import { parseYouTubeViews } from '@/lib/youtube-views';
 
 // Helper to filter out clearly outdated videos from years ago (e.g. 2019, 2018, 5 years ago)
 function isFreshVideo(item: any): boolean {
@@ -72,26 +73,26 @@ async function scrapeYouTubeTrendingFeed() {
       const viewText =
         v.viewCountText?.simpleText ||
         v.shortViewCountText?.simpleText ||
-        '500K views';
+        (Array.isArray(v.viewCountText?.runs) ? v.viewCountText.runs.map((r: any) => r.text).join('') : '') ||
+        (Array.isArray(v.shortViewCountText?.runs) ? v.shortViewCountText.runs.map((r: any) => r.text).join('') : '') ||
+        v.accessibility?.accessibilityData?.label ||
+        '';
 
       const uploadedAt =
         v.publishedTimeText?.simpleText ||
+        (Array.isArray(v.publishedTimeText?.runs) ? v.publishedTimeText.runs.map((r: any) => r.text).join('') : '') ||
         'Trending Today';
 
       const duration =
         v.lengthText?.simpleText ||
+        (Array.isArray(v.lengthText?.runs) ? v.lengthText.runs.map((r: any) => r.text).join('') : '') ||
         '10:00';
 
       const thumb =
         v.thumbnail?.thumbnails?.[v.thumbnail.thumbnails.length - 1]?.url ||
         `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-      let numericViews = 500000;
-      if (viewText.toLowerCase().includes('m') || viewText.toLowerCase().includes('jt') || viewText.toLowerCase().includes('juta')) {
-        numericViews = parseFloat(viewText) * 1000000;
-      } else if (viewText.toLowerCase().includes('k') || viewText.toLowerCase().includes('rb') || viewText.toLowerCase().includes('ribu')) {
-        numericViews = parseFloat(viewText) * 1000;
-      }
+      const numericViews = parseYouTubeViews(v.viewCountText, v.shortViewCountText, 450000);
 
       const item = {
         id: `yt-${videoId}`,
@@ -108,8 +109,8 @@ async function scrapeYouTubeTrendingFeed() {
         subscriberCount: '1M+',
         verified: Boolean(v.ownerBadges?.length || v.badges?.length),
         thumbnailUrl: thumb,
-        views: Math.round(numericViews) || 350000,
-        likes: Math.round(numericViews * 0.06) || 15000,
+        views: numericViews,
+        likes: Math.round(numericViews * 0.05) || 15000,
         dislikes: 20,
         uploadedAt,
         duration,
@@ -198,26 +199,25 @@ async function scrapeTrendingSearch(query = 'trending indonesia hari ini') {
       const viewText =
         v.viewCountText?.simpleText ||
         v.shortViewCountText?.simpleText ||
-        '250K views';
+        (Array.isArray(v.viewCountText?.runs) ? v.viewCountText.runs.map((r: any) => r.text).join('') : '') ||
+        (Array.isArray(v.shortViewCountText?.runs) ? v.shortViewCountText.runs.map((r: any) => r.text).join('') : '') ||
+        '';
 
       const uploadedAt =
         v.publishedTimeText?.simpleText ||
+        (Array.isArray(v.publishedTimeText?.runs) ? v.publishedTimeText.runs.map((r: any) => r.text).join('') : '') ||
         'This week';
 
       const duration =
         v.lengthText?.simpleText ||
+        (Array.isArray(v.lengthText?.runs) ? v.lengthText.runs.map((r: any) => r.text).join('') : '') ||
         '10:00';
 
       const thumb =
         v.thumbnail?.thumbnails?.[v.thumbnail.thumbnails.length - 1]?.url ||
         `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-      let numericViews = 250000;
-      if (viewText.toLowerCase().includes('m') || viewText.toLowerCase().includes('jt') || viewText.toLowerCase().includes('juta')) {
-        numericViews = parseFloat(viewText) * 1000000;
-      } else if (viewText.toLowerCase().includes('k') || viewText.toLowerCase().includes('rb') || viewText.toLowerCase().includes('ribu')) {
-        numericViews = parseFloat(viewText) * 1000;
-      }
+      const numericViews = parseYouTubeViews(v.viewCountText, v.shortViewCountText, 250000);
 
       const item = {
         id: `yt-${videoId}`,
@@ -234,7 +234,7 @@ async function scrapeTrendingSearch(query = 'trending indonesia hari ini') {
         subscriberCount: '500K+',
         verified: Boolean(v.ownerBadges?.length || v.badges?.length),
         thumbnailUrl: thumb,
-        views: Math.round(numericViews) || 250000,
+        views: numericViews,
         likes: Math.round(numericViews * 0.05) || 12000,
         dislikes: 15,
         uploadedAt,
