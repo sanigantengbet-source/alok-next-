@@ -154,9 +154,9 @@ export const Navbar: React.FC = () => {
   };
 
   // Determine list items to show:
-  // If searchInput has text and liveSuggestions are returned, show live suggestions.
-  // Otherwise, show saved searchHistory (or defaults if empty).
-  const displayedItems = searchInput.trim().length > 0 && liveSuggestions.length > 0
+  // If searchInput has text, show live suggestions from YouTube.
+  // When searchInput is empty, show user's authentic search history only.
+  const displayedItems = searchInput.trim().length > 0
     ? liveSuggestions
     : searchHistory;
 
@@ -224,6 +224,14 @@ export const Navbar: React.FC = () => {
                 >
                   Clear All
                 </button>
+              </div>
+            )}
+
+            {searchInput.trim().length === 0 && searchHistory.length === 0 && (
+              <div className="py-16 px-4 text-center text-gray-500">
+                <Search className="w-10 h-10 mx-auto mb-3 text-gray-600 opacity-60" />
+                <p className="text-sm font-medium text-gray-400">No recent searches</p>
+                <p className="text-xs text-gray-500 mt-1">Search history will appear here once you search</p>
               </div>
             )}
 
@@ -349,13 +357,13 @@ export const Navbar: React.FC = () => {
         </button>
 
         {/* Search Recommendations / History Dropdown */}
-        {isSearchFocused && (
+        {isSearchFocused && displayedItems.length > 0 && (
           <div className="absolute top-12 left-0 right-14 bg-white dark:bg-[#212121] rounded-2xl shadow-xl border border-gray-200 dark:border-[#383838] py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
             <div className="px-4 py-1.5 flex items-center justify-between">
               <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                {searchInput.trim().length > 0 && liveSuggestions.length > 0
+                {searchInput.trim().length > 0
                   ? 'YouTube Suggestions'
-                  : 'Search History'}
+                  : 'Recent Searches'}
               </span>
               {searchInput.trim().length === 0 && searchHistory.length > 0 && (
                 <button
