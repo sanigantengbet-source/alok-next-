@@ -15,6 +15,8 @@ import {
   Sparkles,
   Link2,
   Film,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { VideoCard } from './VideoCard';
 import { VideoCardSkeleton } from './VideoCardSkeleton';
@@ -49,31 +51,16 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
     setIsUploadModalOpen,
     isLoadingVideos,
     playDirectYouTubeVideo,
+    fetchTrendingVideos,
+    loadMoreVideos,
+    isFetchingMore,
   } = useApp();
 
-  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [directUrlInput, setDirectUrlInput] = useState<string>('');
   const [isDirectLoading, setIsDirectLoading] = useState<boolean>(false);
 
-  // Trigger smooth skeleton loading effect when switching categories, searching, or switching views
-  useEffect(() => {
-    let isMounted = true;
-    const startTimer = setTimeout(() => {
-      if (isMounted) setIsTransitioning(true);
-    }, 0);
-
-    const endTimer = setTimeout(() => {
-      if (isMounted) setIsTransitioning(false);
-    }, 280);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(startTimer);
-      clearTimeout(endTimer);
-    };
-  }, [selectedCategory, searchQuery, currentView]);
-
-  const isLoading = propLoading !== undefined ? propLoading : (isLoadingVideos || isTransitioning);
+  // Show skeletons only when truly loading without existing content to prevent blinking
+  const isLoading = propLoading !== undefined ? propLoading : (isLoadingVideos && videos.length === 0);
 
   // Filter logic
   let displayedVideos: Video[] = [...videos];
@@ -281,13 +268,39 @@ export const VideoGrid: React.FC<VideoGridProps> = ({
           ))}
         </div>
       ) : displayedVideos.length > 0 ? (
-        <div
-          id="video-grid-list"
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 animate-in fade-in duration-150"
-        >
-          {displayedVideos.map((video) => (
-            <VideoCard key={video.id} video={video} />
-          ))}
+        <div className="flex flex-col gap-8">
+          <div
+            id="video-grid-list"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 animate-in fade-in duration-150"
+          >
+            {displayedVideos.map((video, index) => (
+              <VideoCard key={`grid-${video.id}-${index}`} video={video} />
+            ))}
+          </div>
+
+          {/* Load More Recommendations / Infinite Scroll trigger for Home View */}
+          {(currentView === 'home' || currentView === 'trending') && !searchQuery && (
+            <div className="flex flex-col items-center justify-center pt-4 pb-12">
+              <button
+                id="load-more-recommendations-btn"
+                onClick={() => loadMoreVideos()}
+                disabled={isFetchingMore}
+                className="flex items-center gap-2.5 px-6 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-[#222222] dark:hover:bg-[#2a2a2a] text-gray-800 dark:text-gray-200 text-sm font-semibold rounded-full border border-gray-200 dark:border-[#333333] shadow-xs hover:shadow-md transition-all active:scale-95 disabled:opacity-60"
+              >
+                {isFetchingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                    <span>Memuat rekomendasi baru...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>Muat Lebih Banyak Rekomendasi</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* Empty State */
