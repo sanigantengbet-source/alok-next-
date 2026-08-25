@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Video, SponsorSegment, SponsorBlockSettings } from '@/types';
 import { SponsorBlockService, CATEGORY_LABELS } from '@/lib/sponsorblock';
 import { useApp } from '@/context/AppContext';
-import { Shield, ShieldAlert, ShieldCheck, Undo2, X, Zap, Check, ExternalLink } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, Undo2, X, Zap, Play } from 'lucide-react';
 
 interface YouTubePlayerProps {
   video: Video;
@@ -36,13 +36,16 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     setIsPlayerPlaying: setGlobalIsPlaying,
   } = useApp();
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const playerRef = useRef<any>(null);
   const pollerRef = useRef<NodeJS.Timeout | null>(null);
   const loadedVideoIdRef = useRef<string | null>(null);
   const lastSkippedUUIDRef = useRef<string | null>(null);
 
+  // Capture the initial seek time once on component mount to keep iframe.src completely static
+  const [initialStartSeconds] = useState<number>(() => Math.max(0, Math.floor(globalCurrentTime || 0)));
   const globalCurrentTimeRef = useRef<number>(globalCurrentTime);
+
   useEffect(() => {
     globalCurrentTimeRef.current = globalCurrentTime;
   }, [globalCurrentTime]);
@@ -52,8 +55,16 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
   const [activeNotice, setActiveNotice] = useState<SkipNotice | null>(null);
   const [playerCurrentTime, setPlayerCurrentTime] = useState<number>(globalCurrentTime || 0);
   const [playerDuration, setPlayerDuration] = useState<number>(0);
-  const [isPlayerReady, setIsPlayerReady] = useState<boolean>(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(false);
+  const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
+  const [showPlayOverlay, setShowPlayOverlay] = useState<boolean>(false);
   const [showSegmentsPopover, setShowSegmentsPopover] = useState<boolean>(false);
+
+  // Static embed source that NEVER changes on tick updates, preventing iframe reload loops
+  const embedSrc = React.useMemo(() => {
+    const originParam = typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
+    return `https://www.youtube-nocookie.com/embed/${video.youtubeId}?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&start=${initialStartSeconds}${originParam}`;
+  }, [video.youtubeId, initialStartSeconds]);
 
   // Keep references updated for the stable poller loop
   const segmentsRef = useRef<SponsorSegment[]>([]);
@@ -108,7 +119,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     triggerSkipNoticeRef.current = triggerSkipNotice;
   }, [triggerSkipNotice]);
 
-  // Undo skipped segment (re-seek back to start of skipped segment)
+  // Undo skipped segment
   const handleUndoSkip = () => {
     if (!activeNotice || !playerRef.current) return;
     try {
@@ -118,6 +129,28 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
       }
     } catch {}
     setActiveNotice(null);
+  };
+
+  // Manual trigger play if browser blocked autoplay
+  const handleManualPlay = () => {
+    setShowPlayOverlay(false);
+    setIsVideoPlaying(true);
+    setGlobalIsPlaying(true);
+
+    if (playerRef.current) {
+      try {
+        if (typeof playerRef.current.playVideo === 'function') {
+          playerRef.current.playVideo();
+        }
+      } catch {}
+    } else if (iframeRef.current?.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+          '*'
+        );
+      } catch {}
+    }
   };
 
   // 1. Fetch SponsorBlock Segments when video changes
@@ -149,7 +182,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     };
   }, [video.youtubeId]);
 
-  // 2. Playback Polling Handler (Stable ref-based, does not trigger re-renders or resets)
+  // 2. Playback Polling Handler (Operates locally without causing global context re-render loops)
   const startPlaybackPolling = useCallback(() => {
     if (pollerRef.current) clearInterval(pollerRef.current);
 
@@ -162,14 +195,13 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         const currentTime = playerRef.current.getCurrentTime();
         if (typeof currentTime !== 'number' || isNaN(currentTime)) return;
 
+        // Local state update for smooth player overlay UI
         setPlayerCurrentTime(currentTime);
-        setGlobalCurrentTime(currentTime);
 
         if (typeof playerRef.current.getDuration === 'function') {
           const dur = playerRef.current.getDuration();
           if (typeof dur === 'number' && dur > 0) {
             setPlayerDuration(dur);
-            setGlobalDuration(dur);
           }
         }
 
@@ -202,7 +234,7 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
         // Suppress polling error
       }
     }, 250);
-  }, [setGlobalCurrentTime, setGlobalDuration]);
+  }, []);
 
   const stopPlaybackPolling = useCallback(() => {
     if (pollerRef.current) {
@@ -211,61 +243,28 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     }
   }, []);
 
-  // 3. Initialize & Load Video in Player (Guarded by loadedVideoIdRef)
+  // 3. Attach YouTube IFrame API to the existing DOM iframe
   useEffect(() => {
     const targetVideoId = video.youtubeId;
-    const resumeTime = Math.max(0, Math.floor(globalCurrentTimeRef.current || 0));
+    const resumeTime = Math.max(0, Math.floor(initialStartSeconds || 0));
 
-    const initOrLoadPlayer = () => {
+    const bindYTPlayer = () => {
       if (!window.YT || !window.YT.Player) return;
 
-      const playerElement = document.getElementById('nexttube-yt-iframe-player');
-      if (!playerElement) return;
+      const iframeElem = document.getElementById('nexttube-yt-iframe-player');
+      if (!iframeElem) return;
 
-      // If player exists, only load new video if it's different from the currently loaded one!
-      if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-        if (loadedVideoIdRef.current !== targetVideoId) {
-          try {
-            loadedVideoIdRef.current = targetVideoId;
-            playerRef.current.loadVideoById({
-              videoId: targetVideoId,
-              startSeconds: resumeTime,
-            });
-            return;
-          } catch {
-            try {
-              playerRef.current.destroy();
-            } catch {}
-            playerRef.current = null;
-          }
-        } else {
-          // Already loaded and playing this video, check if we need to sync position
-          try {
-            const currentYTTime = playerRef.current.getCurrentTime?.() || 0;
-            if (resumeTime > 0 && Math.abs(currentYTTime - resumeTime) > 2) {
-              playerRef.current.seekTo(resumeTime, true);
-            }
-          } catch {}
-          return;
-        }
+      // If already bound to this video
+      if (playerRef.current && loadedVideoIdRef.current === targetVideoId) {
+        return;
       }
 
       try {
         loadedVideoIdRef.current = targetVideoId;
         playerRef.current = new window.YT.Player('nexttube-yt-iframe-player', {
-          videoId: targetVideoId,
-          playerVars: {
-            autoplay: 1,
-            start: resumeTime,
-            enablejsapi: 1,
-            modestbranding: 1,
-            rel: 0,
-            iv_load_policy: 3,
-            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-          },
           events: {
             onReady: (event: any) => {
-              setIsPlayerReady(true);
+              setIsIframeLoaded(true);
               try {
                 if (resumeTime > 0) {
                   event.target.seekTo(resumeTime, true);
@@ -273,37 +272,53 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
                 event.target.playVideo();
                 if (typeof event.target.getDuration === 'function') {
                   const dur = event.target.getDuration();
-                  setPlayerDuration(dur);
-                  setGlobalDuration(dur);
+                  if (dur > 0) {
+                    setPlayerDuration(dur);
+                    setGlobalDuration(dur);
+                  }
                 }
               } catch {}
               startPlaybackPolling();
             },
             onStateChange: (event: any) => {
-              // 1 = PLAYING, 2 = PAUSED, 0 = ENDED, 3 = BUFFERING
+              // 1 = PLAYING, 2 = PAUSED, 0 = ENDED, 3 = BUFFERING, -1 = UNSTARTED, 5 = CUED
               if (event.data === 1) {
+                setIsVideoPlaying(true);
+                setShowPlayOverlay(false);
                 setGlobalIsPlaying(true);
                 startPlaybackPolling();
               } else if (event.data === 2) {
+                setIsVideoPlaying(false);
                 setGlobalIsPlaying(false);
                 stopPlaybackPolling();
+                try {
+                  const cur = event.target.getCurrentTime?.();
+                  if (typeof cur === 'number' && cur > 0) {
+                    setGlobalCurrentTime(cur);
+                  }
+                } catch {}
               } else if (event.data === 0) {
+                setIsVideoPlaying(false);
                 setGlobalIsPlaying(false);
                 stopPlaybackPolling();
                 if (onEndedRef.current) onEndedRef.current();
+              } else if (event.data === -1 || event.data === 5) {
+                try {
+                  event.target.playVideo();
+                } catch {}
               }
             },
             onError: () => {
-              // Ignore error
+              setIsIframeLoaded(true);
             },
           },
         });
       } catch (err) {
-        console.warn('YouTube Player initialization error:', err);
+        console.warn('YouTube Player binding notice:', err);
       }
     };
 
-    // Load YouTube IFrame API script if not loaded
+    // If script not loaded yet, inject it
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
@@ -311,14 +326,14 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
       firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
 
       window.onYouTubeIframeAPIReady = () => {
-        initOrLoadPlayer();
+        bindYTPlayer();
       };
     } else if (window.YT && window.YT.Player) {
-      initOrLoadPlayer();
+      bindYTPlayer();
     }
-  }, [video.youtubeId, startPlaybackPolling, stopPlaybackPolling, setGlobalIsPlaying, setGlobalDuration]);
+  }, [video.youtubeId, initialStartSeconds, startPlaybackPolling, stopPlaybackPolling, setGlobalIsPlaying, setGlobalDuration, setGlobalCurrentTime]);
 
-  // Clean up timer, poller, and preserve playback position on unmount
+  // Clean up timer, poller, and preserve playback position to global context on unmount
   useEffect(() => {
     return () => {
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
@@ -340,10 +355,48 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
 
   return (
     <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl border border-gray-200 dark:border-[#222] select-none group">
-      {/* YouTube Player IFrame Target Element */}
-      <div className="w-full h-full">
-        <div id="nexttube-yt-iframe-player" className="w-full h-full" />
-      </div>
+      {/* Fast Direct Native IFrame - Instant Load without black screen */}
+      <iframe
+        ref={iframeRef}
+        id="nexttube-yt-iframe-player"
+        src={embedSrc}
+        title={video.title}
+        className="w-full h-full border-0 absolute inset-0 z-0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+        onLoad={() => setIsIframeLoaded(true)}
+      />
+
+      {/* Poster Placeholder (shown briefly before first frame renders to eliminate pure black screen) */}
+      {!isIframeLoaded && (
+        <div className="absolute inset-0 z-10 bg-black flex items-center justify-center pointer-events-none transition-opacity duration-300">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={video.thumbnailUrl || `https://i.ytimg.com/vi/${video.youtubeId}/hqdefault.jpg`}
+            alt={video.title}
+            className="w-full h-full object-cover blur-xs opacity-60 scale-105"
+          />
+          <div className="absolute flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-full border-3 border-red-500 border-t-transparent animate-spin" />
+            <span className="text-xs text-white/90 font-medium drop-shadow-md">Memuat video...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Play Overlay if autoplay was prevented by browser */}
+      {showPlayOverlay && (
+        <div
+          onClick={handleManualPlay}
+          className="absolute inset-0 z-20 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center cursor-pointer group/play"
+        >
+          <div className="w-16 h-16 rounded-full bg-red-600 group-hover/play:scale-110 group-hover/play:bg-red-700 text-white flex items-center justify-center shadow-2xl transition-transform">
+            <Play className="w-7 h-7 fill-white translate-x-0.5" />
+          </div>
+          <span className="text-white text-xs font-semibold mt-3 bg-black/70 px-3 py-1 rounded-full">
+            Ketuk untuk melanjutkan video
+          </span>
+        </div>
+      )}
 
       {/* SPONSORBLOCK VISUAL SEGMENT INDICATOR BAR */}
       {playerDuration > 0 && segments.length > 0 && (
@@ -522,3 +575,4 @@ export const YouTubePlayer: React.FC<YouTubePlayerProps> = ({ video, settings, o
     </div>
   );
 };
+
