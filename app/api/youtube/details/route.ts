@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
       },
-      next: { revalidate: 60 },
+      cache: 'no-store',
     });
 
     if (res.ok) {
@@ -96,29 +96,125 @@ export async function GET(req: NextRequest) {
           } catch {}
         }
 
-        // Try to extract exact likes
+        // Try to extract exact likes, subscriber count, avatar, and full description
         let likes = Math.round(numericViews * 0.04) || 2500;
-        let subscriberCount = '100K+';
+        let subscriberCount = '';
+        let channelAvatar = `https://picsum.photos/seed/${encodeURIComponent(channelTitle)}/100/100`;
+        let fullDescription = description || '';
 
-        // Check primary info renderer
+        // Deep search in ytData for rich metadata
         if (ytData) {
-          const findLike = (node: any) => {
+          const scanNode = (node: any) => {
             if (!node || typeof node !== 'object') return;
+
+            // Likes extraction
             if (node.segmentedLikeDislikeButtonViewModel?.likeButtonViewModel?.likeButtonViewModel?.toggleButtonViewModel?.toggleButtonViewModel?.defaultButtonViewModel?.buttonViewModel?.title) {
               const text = node.segmentedLikeDislikeButtonViewModel.likeButtonViewModel.likeButtonViewModel.toggleButtonViewModel.toggleButtonViewModel.defaultButtonViewModel.buttonViewModel.title;
               const parsedLikes = parseYouTubeViews(text, null, 0);
               if (parsedLikes > 0) likes = parsedLikes;
             }
+
+            // Subscriber count extraction
             if (node.videoOwnerRenderer?.subscriberCountText?.simpleText) {
               subscriberCount = node.videoOwnerRenderer.subscriberCountText.simpleText;
             } else if (Array.isArray(node.videoOwnerRenderer?.subscriberCountText?.runs)) {
               subscriberCount = node.videoOwnerRenderer.subscriberCountText.runs.map((r: any) => r.text).join('');
+            } else if (node.subscriberCountText?.simpleText) {
+              subscriberCount = node.subscriberCountText.simpleText;
+            } else if (Array.isArray(node.subscriberCountText?.runs)) {
+              subscriberCount = node.subscriberCountText.runs.map((r: any) => r.text).join('');
+            } else if (node.videoOwnerRenderer?.subscriberCountText?.accessibility?.accessibilityData?.label) {
+              subscriberCount = node.videoOwnerRenderer.subscriberCountText.accessibility.accessibilityData.label;
             }
+
+            // Channel Avatar extraction
+            if (node.videoOwnerRenderer?.thumbnail?.thumbnails && Array.isArray(node.videoOwnerRenderer.thumbnail.thumbnails)) {
+              const thumbs = node.videoOwnerRenderer.thumbnail.thumbnails;
+              if (thumbs.length > 0 && thumbs[thumbs.length - 1]?.url) {
+                channelAvatar = thumbs[thumbs.length - 1].url;
+              }
+            } else if (node.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails) {
+              const thumbs = node.channelThumbnailSupportedRenderers.channelThumbnailWithLinkRenderer.thumbnail.thumbnails;
+              if (thumbs.length > 0 && thumbs[thumbs.length - 1]?.url) {
+                channelAvatar = thumbs[thumbs.length - 1].url;
+              }
+            }
+
+            // Full attributed description extraction
+            if (node.attributedDescription?.content && node.attributedDescription.content.length > fullDescription.length) {
+              fullDescription = node.attributedDescription.content;
+            }
+            if (node.expandableVideoDescriptionBodyRenderer?.attributedDescriptionBodyText?.content && node.expandableVideoDescriptionBodyRenderer.attributedDescriptionBodyText.content.length > fullDescription.length) {
+              fullDescription = node.expandableVideoDescriptionBodyRenderer.attributedDescriptionBodyText.content;
+            }
+
             for (const k of Object.keys(node)) {
-              findLike(node[k]);
+              scanNode(node[k]);
             }
           };
-          findLike(ytData);
+          scanNode(ytData);
+        }
+
+        // Regex fallbacks for subscriber count if not extracted from JSON
+        if (!subscriberCount) {
+          const subSimpleMatch = html.match(/"subscriberCountText"\s*:\s*\{[^}]*?"simpleText"\s*:\s*"([^"]+)"/);
+          if (subSimpleMatch && subSimpleMatch[1]) {
+            subscriberCount = subSimpleMatch[1];
+          } else {
+            const subRunsMatch = html.match(/"subscriberCountText"\s*:\s*\{"runs":\s*\[\{"text"\s*:\s*"([^"]+)"\}/);
+            if (subRunsMatch && subRunsMatch[1]) {
+              subscriberCount = subRunsMatch[1];
+            } else {
+              const subLabelMatch = html.match(/"subscriberCountText"\s*:\s*\{"accessibility":\s*\{"accessibilityData":\s*\{"label"\s*:\s*"([^"]+)"/);
+              if (subLabelMatch && subLabelMatch[1]) {
+                subscriberCount = subLabelMatch[1];
+              } else {
+                const subTextMatch = html.match(/([0-9.,]+(?:\s*jt|\s*M|\s*rb|\s*K|\s*B)?\s*(?:subscriber|pelanggan|subscribers|pengikut))/i);
+                if (subTextMatch && subTextMatch[1]) {
+                  subscriberCount = subTextMatch[1];
+                }
+              }
+            }
+          }
+        }
+
+        // Regex fallback for channel avatar
+        if (channelAvatar.includes('picsum.photos')) {
+          const avatarMatch = html.match(/"videoOwnerRenderer"\s*:\s*\{[\s\S]*?"thumbnails"\s*:\s*\[\{"url"\s*:\s*"([^"]+)"/);
+          if (avatarMatch && avatarMatch[1]) {
+            channelAvatar = avatarMatch[1];
+          }
+        }
+
+        // Clean up subscriber count text (e.g. "1.25M subscribers" -> "1.25M")
+        let cleanedSubscribers = subscriberCount ? subscriberCount.replace(/\s*(?:subscribers?|pelanggan|pengikut|abonnés|suscriptores)\s*$/i, '').trim() : '';
+
+        // If still missing subscriber count, fetch quickly from channel info
+        if (!cleanedSubscribers && channelId && channelId.startsWith('UC')) {
+          try {
+            const channelRes = await fetch(`https://www.youtube.com/channel/${encodeURIComponent(channelId)}`, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+              },
+              signal: AbortSignal.timeout(2000),
+              cache: 'no-store',
+            });
+            if (channelRes.ok) {
+              const chHtml = await channelRes.text();
+              const chSubMatch = chHtml.match(/"subscriberCountText"\s*:\s*\{[^}]*?"simpleText"\s*:\s*"([^"]+)"/) ||
+                chHtml.match(/"subscriberCountText"\s*:\s*\{"runs":\s*\[\{"text"\s*:\s*"([^"]+)"\}/) ||
+                chHtml.match(/([0-9.,]+(?:\s*jt|\s*M|\s*rb|\s*K|\s*B)?\s*(?:subscriber|pelanggan|subscribers))/i);
+              if (chSubMatch && chSubMatch[1]) {
+                cleanedSubscribers = chSubMatch[1].replace(/\s*(?:subscribers?|pelanggan|pengikut)\s*$/i, '').trim();
+              }
+            }
+          } catch {}
+        }
+
+        if (!cleanedSubscribers) {
+          cleanedSubscribers = '100K+';
         }
 
         const thumbnail =
@@ -130,11 +226,11 @@ export async function GET(req: NextRequest) {
             id: `yt-${videoId}`,
             youtubeId: videoId,
             title,
-            description,
+            description: fullDescription || description,
             channelTitle,
             channelId,
-            channelAvatar: `https://picsum.photos/seed/${encodeURIComponent(channelTitle)}/100/100`,
-            subscriberCount,
+            channelAvatar,
+            subscriberCount: cleanedSubscribers,
             verified: true,
             thumbnailUrl: thumbnail,
             views: numericViews,
