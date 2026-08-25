@@ -109,6 +109,9 @@ interface AppContextType {
 
   isLoadingVideos: boolean;
   setIsLoadingVideos: (loading: boolean) => void;
+  fetchTrendingVideos: (forceRefresh?: boolean, category?: string) => Promise<void>;
+  loadMoreVideos: () => Promise<void>;
+  isFetchingMore: boolean;
 
   shareModalVideo: Video | null;
   setShareModalVideo: (video: Video | null) => void;
@@ -164,7 +167,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(DEFAULT_USER);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [videos, setVideos] = useState<Video[]>(INITIAL_VIDEOS);
+  const [videos, setVideos] = useState<Video[]>([]);
   const [shorts, setShorts] = useState<Video[]>(INITIAL_SHORTS);
   const [searchResults, setSearchResults] = useState<Video[]>([]);
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
@@ -173,12 +176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchHistory, setSearchHistory] = useState<string[]>([
-    'Next.js 15 Full Course',
-    'React Hooks',
-    'CS50 AI',
-    'TypeScript Crash Course',
-  ]);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
   const [subscribedChannelIds, setSubscribedChannelIds] = useState<string[]>([]);
   const [likedVideoIds, setLikedVideoIds] = useState<string[]>([]);
@@ -191,7 +189,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState<boolean>(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
-  const [isLoadingVideos, setIsLoadingVideos] = useState<boolean>(false);
+  const [isLoadingVideos, setIsLoadingVideos] = useState<boolean>(true);
+  const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
+  const [recommendationPage, setRecommendationPage] = useState<number>(1);
   const [shareModalVideo, setShareModalVideo] = useState<Video | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
 
@@ -203,7 +203,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const hydrateFromIndexedDB = async () => {
       try {
-        const [savedSubs, savedCustomChannels, savedLikes, savedDislikes, savedWatchLater, savedHistory, savedDark, savedSearchHist] = await Promise.all([
+        const todayKey = new Date().toDateString();
+        const [
+          savedSubs,
+          savedCustomChannels,
+          savedLikes,
+          savedDislikes,
+          savedWatchLater,
+          savedHistory,
+          savedDark,
+          savedSearchHist,
+          savedDailyVideos,
+          savedDailyDate,
+        ] = await Promise.all([
           getStoredItem<string[]>('subscribedChannelIds', []),
           getStoredItem<Channel[]>('channels', INITIAL_CHANNELS),
           getStoredItem<string[]>('likedVideoIds', ['v-1', 'v-2']),
@@ -211,12 +223,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           getStoredItem<string[]>('watchLaterIds', ['v-3', 'v-6']),
           getStoredItem<string[]>('historyVideoIds', ['v-1', 'v-2', 'v-4']),
           getStoredItem<boolean | null>('isDarkMode', null),
-          getStoredItem<string[]>('searchHistory', [
-            'Next.js 15 Full Course',
-            'React Hooks',
-            'CS50 AI',
-            'TypeScript Crash Course',
-          ]),
+          getStoredItem<string[]>('searchHistory', []),
+          getStoredItem<Video[]>('dailyHomeVideos', []),
+          getStoredItem<string>('dailyHomeDate', ''),
         ]);
 
         if (!isCancelled) {
@@ -243,7 +252,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(savedWatchLater)) setWatchLaterIds(savedWatchLater);
           if (Array.isArray(savedHistory)) setHistoryVideoIds(savedHistory);
           if (typeof savedDark === 'boolean') setIsDarkMode(savedDark);
-          if (Array.isArray(savedSearchHist) && savedSearchHist.length > 0) setSearchHistory(savedSearchHist);
+          if (Array.isArray(savedSearchHist)) {
+            // Filter out any leftover initial mock search items
+            const cleanedHistory = savedSearchHist.filter(
+              (item) =>
+                item &&
+                typeof item === 'string' &&
+                item !== 'Next.js 15 Full Course' &&
+                item !== 'React Hooks' &&
+                item !== 'CS50 AI' &&
+                item !== 'TypeScript Crash Course'
+            );
+            setSearchHistory(cleanedHistory);
+          }
 
           if (typeof window !== 'undefined') {
             setIsSidebarOpen(window.innerWidth >= 1024);
@@ -488,40 +509,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isDarkMode]);
 
-  // Load and auto-update live YouTube Trending videos for Home feed
-  const fetchTrendingVideos = useCallback(async () => {
+  // Load and auto-update live YouTube recommendations for Home feed
+  const fetchTrendingVideos = useCallback(async (isSilent = false, category?: string, forceRefresh = false) => {
     try {
-      const res = await fetch('/api/youtube/trending');
+      if (!isSilent) setIsLoadingVideos(true);
+      const catParam = category && category !== 'All' ? `&category=${encodeURIComponent(category)}` : '';
+      const refreshParam = forceRefresh ? '&refresh=true' : '';
+      const res = await fetch(`/api/youtube/trending?_t=${Date.now()}${catParam}${refreshParam}`);
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data.results) && data.results.length > 0) {
-        const freshTrending: Video[] = filterFreshVideos(data.results as Video[]);
+        const freshTrending: Video[] = data.results as Video[];
         setVideos((prev) => {
-          const trendingIds = new Set(freshTrending.map((r: Video) => r.id));
-          // Strictly purge old/stale videos and placeholders, keeping only fresh videos
-          const existingFreshNonTrending = prev.filter(
-            (v) => !trendingIds.has(v.id) && !v.id.startsWith('v-') && isFreshAndHotVideo(v)
-          );
-          return [...freshTrending, ...existingFreshNonTrending];
+          // Keep user custom uploads
+          const userUploads = prev.filter((v) => v.id.startsWith('v-') || v.id.startsWith('custom-'));
+          return [...userUploads, ...freshTrending];
         });
       }
     } catch (e) {
-      console.log('Trending sync notice:', e);
+      console.log('Daily trending sync notice:', e);
+    } finally {
+      setIsLoadingVideos(false);
     }
   }, []);
 
-  // Fetch trending on mount and setup auto-update timer (every 4 minutes)
+  // Load more recommendations for infinite scroll
+  const loadMoreVideos = useCallback(async () => {
+    if (isFetchingMore) return;
+    setIsFetchingMore(true);
+    try {
+      const nextPage = recommendationPage + 1;
+      const catParam = selectedCategory && selectedCategory !== 'All' ? `&category=${encodeURIComponent(selectedCategory)}` : '';
+      const res = await fetch(`/api/youtube/trending?page=${nextPage}${catParam}&_t=${Date.now()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        setVideos((prev) => {
+          const existingIds = new Set(prev.map((v) => v.id));
+          const newUnique = (data.results as Video[]).filter((v) => !existingIds.has(v.id));
+          return [...prev, ...newUnique];
+        });
+        setRecommendationPage(nextPage);
+      }
+    } catch (err) {
+      console.warn('Error loading more recommendations:', err);
+    } finally {
+      setIsFetchingMore(false);
+    }
+  }, [isFetchingMore, recommendationPage, selectedCategory]);
+
+  // Fetch fresh recommendations on mount and sync periodically (every 5 minutes)
   useEffect(() => {
-    const initialTimer = setTimeout(() => {
-      fetchTrendingVideos();
-    }, 10);
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        fetchTrendingVideos(true, undefined, true);
+      }
+    }, 0);
 
     const interval = setInterval(() => {
-      fetchTrendingVideos();
-    }, 4 * 60 * 1000);
+      if (isMounted) {
+        fetchTrendingVideos(true);
+      }
+    }, 5 * 60 * 1000);
 
     return () => {
-      clearTimeout(initialTimer);
+      isMounted = false;
+      clearTimeout(timer);
       clearInterval(interval);
     };
   }, [fetchTrendingVideos]);
@@ -1047,6 +1101,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsUploadModalOpen,
         isLoadingVideos,
         setIsLoadingVideos,
+        fetchTrendingVideos,
+        loadMoreVideos,
+        isFetchingMore,
         shareModalVideo,
         setShareModalVideo,
         notifications,
