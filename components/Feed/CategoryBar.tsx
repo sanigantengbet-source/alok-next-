@@ -6,7 +6,7 @@ import { useApp } from '@/context/AppContext';
 import { CATEGORIES } from '@/data/videos';
 
 export const CategoryBar: React.FC = () => {
-  const { selectedCategory, setSelectedCategory, setSearchQuery, setActiveVideo } = useApp();
+  const { selectedCategory, setSelectedCategory, setSearchQuery, setActiveVideo, fetchTrendingVideos } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleScroll = (direction: 'left' | 'right') => {
@@ -20,6 +20,9 @@ export const CategoryBar: React.FC = () => {
     setSelectedCategory(category);
     setSearchQuery('');
     setActiveVideo(null);
+    if (category !== selectedCategory) {
+      fetchTrendingVideos(true, category);
+    }
   };
 
   return (
@@ -40,11 +43,11 @@ export const CategoryBar: React.FC = () => {
         className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {CATEGORIES.map((category) => {
+        {CATEGORIES.map((category, idx) => {
           const isSelected = selectedCategory === category;
           return (
             <button
-              key={category}
+              key={`cat-${category}-${idx}`}
               id={`category-chip-${category.replace(/\s+/g, '-').toLowerCase()}`}
               onClick={() => handleSelectCategory(category)}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all select-none ${
