@@ -26,7 +26,7 @@ async function scrapeRelatedFromWatchPage(videoId: string) {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
       },
-      next: { revalidate: 120 },
+      cache: 'no-store',
     });
 
     if (!res.ok) return [];
@@ -138,6 +138,7 @@ async function searchRelatedViaHTML(query: string, currentVideoId: string, limit
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
       },
+      cache: 'no-store',
     });
 
     if (!res.ok) return [];
