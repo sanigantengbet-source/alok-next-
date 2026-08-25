@@ -88,6 +88,42 @@ const RelatedVideoRow: React.FC<{
   );
 };
 
+// Helper to format subscriber count accurately
+const formatSubscriberCount = (subText: string | undefined): string => {
+  if (!subText) return 'Subscribers';
+  const clean = subText.trim();
+  if (/(?:subscribers?|pelanggan|pengikut|abonnés|suscriptores)$/i.test(clean)) {
+    return clean;
+  }
+  return `${clean} subscribers`;
+};
+
+// Helper to auto-linkify URLs inside the video description
+const renderDescriptionText = (text: string) => {
+  if (!text) return 'Tidak ada deskripsi video.';
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-blue-600 dark:text-blue-400 hover:underline break-all font-medium"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
 export const WatchPage: React.FC = () => {
   const {
     activeVideo,
@@ -114,17 +150,24 @@ export const WatchPage: React.FC = () => {
   const [isLoadingRelated, setIsLoadingRelated] = useState(false);
   const [liveDetails, setLiveDetails] = useState<Partial<Video> | null>(null);
 
-  // Swipe down gesture to pop up
+  // Swipe down gesture to pop up - exclusively attached to top drag handle
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState<number>(0);
   const [isDraggingDown, setIsDraggingDown] = useState<boolean>(false);
 
-  // Fetch real-time live metadata (authentic exact views, likes, etc.) from YouTube
+  const activeVideoId = activeVideo?.id;
+  const activeYoutubeId = activeVideo?.youtubeId;
+  const activeChannelId = activeVideo?.channelId;
+  const activeChannelTitle = activeVideo?.channelTitle;
+  const activeVideoTitle = activeVideo?.title;
+  const activeVideoSubs = activeVideo?.subscriberCount;
+
+  // Fetch real-time live metadata (authentic exact views, likes, subscriber count, avatar, full description) from YouTube
   useEffect(() => {
-    if (!activeVideo) return;
+    if (!activeVideoId) return;
     let isSubscribed = true;
 
-    const rawYtId = activeVideo.youtubeId || (activeVideo.id.startsWith('yt-') ? activeVideo.id.replace(/^yt-/, '') : '');
+    const rawYtId = activeYoutubeId || (activeVideoId.startsWith('yt-') ? activeVideoId.replace(/^yt-/, '') : '');
     if (!rawYtId) return;
 
     const fetchLiveDetails = async () => {
@@ -145,25 +188,51 @@ export const WatchPage: React.FC = () => {
     return () => {
       isSubscribed = false;
     };
-  }, [activeVideo]);
+  }, [activeVideoId, activeYoutubeId]);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  // If subscriber count is still default, fetch channel info to get exact live subscriber number
+  useEffect(() => {
+    if (!activeVideoId) return;
+    const currentSubs = liveDetails?.subscriberCount || activeVideoSubs;
+    if (!currentSubs || currentSubs === '100K+' || currentSubs === '500K+') {
+      const rawChanId = activeChannelId || '';
+      const rawChanTitle = activeChannelTitle || '';
+      if (rawChanId || rawChanTitle) {
+        fetch(`/api/youtube/channel?id=${encodeURIComponent(rawChanId)}&title=${encodeURIComponent(rawChanTitle)}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.channel?.subscribers) {
+              setLiveDetails((prev) => ({
+                ...prev,
+                subscriberCount: data.channel.subscribers,
+                channelAvatar: data.channel.avatar || prev?.channelAvatar,
+              }));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [activeVideoId, activeChannelId, activeChannelTitle, activeVideoSubs, liveDetails?.subscriberCount]);
+
+  const handleTopDragStart = (e: React.TouchEvent) => {
     setTouchStartY(e.touches[0].clientY);
     setDragOffsetY(0);
+    setIsDraggingDown(false);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTopDragMove = (e: React.TouchEvent) => {
     if (touchStartY === null) return;
     const currentY = e.touches[0].clientY;
     const diff = currentY - touchStartY;
-    if (diff > 0) {
+    if (diff > 10) {
       setDragOffsetY(diff);
       setIsDraggingDown(true);
     }
   };
 
-  const handleTouchEnd = () => {
-    if (dragOffsetY > 60) {
+  const handleTopDragEnd = () => {
+    // Deliberate threshold to minimize to popup
+    if (dragOffsetY > 100) {
       minimizeWatchToPopUp();
     }
     setTouchStartY(null);
@@ -200,17 +269,17 @@ export const WatchPage: React.FC = () => {
 
   // Fetch real-time related recommendations from YouTube whenever active video changes
   useEffect(() => {
-    if (!activeVideo) return;
+    if (!activeVideoId) return;
     let isSubscribed = true;
 
     const fetchRelated = async () => {
       setIsLoadingRelated(true);
       try {
-        const rawYtId = activeVideo.youtubeId || (activeVideo.id.startsWith('yt-') ? activeVideo.id.replace(/^yt-/, '') : '');
+        const rawYtId = activeYoutubeId || (activeVideoId.startsWith('yt-') ? activeVideoId.replace(/^yt-/, '') : '');
         const res = await fetch(
           `/api/youtube/related?videoId=${encodeURIComponent(rawYtId)}&title=${encodeURIComponent(
-            activeVideo.title
-          )}&channel=${encodeURIComponent(activeVideo.channelTitle || '')}`
+            activeVideoTitle || ''
+          )}&channel=${encodeURIComponent(activeChannelTitle || '')}`
         );
 
         if (!res.ok) return;
@@ -233,7 +302,7 @@ export const WatchPage: React.FC = () => {
     return () => {
       isSubscribed = false;
     };
-  }, [activeVideo]);
+  }, [activeVideoId, activeYoutubeId, activeVideoTitle, activeChannelTitle]);
 
   if (!activeVideo) return null;
 
@@ -245,9 +314,11 @@ export const WatchPage: React.FC = () => {
   // Live metadata or fallback
   const displayViews = liveDetails?.views ?? activeVideo.views;
   const displayLikes = liveDetails?.likes ?? activeVideo.likes;
-  const displaySubs = liveDetails?.subscriberCount || activeVideo.subscriberCount;
+  const displaySubsRaw = liveDetails?.subscriberCount || activeVideo.subscriberCount;
+  const displaySubs = formatSubscriberCount(displaySubsRaw);
   const displayUploadedAt = liveDetails?.uploadedAt || activeVideo.uploadedAt;
   const displayDescription = liveDetails?.description || activeVideo.description;
+  const displayAvatar = liveDetails?.channelAvatar || activeVideo.channelAvatar;
 
   // Final related list: dynamic API results first, fallback to relevant local videos
   const relatedVideos = dynamicRelated.length > 0 ? dynamicRelated : localRelevantVideos;
@@ -267,40 +338,52 @@ export const WatchPage: React.FC = () => {
   };
 
   return (
-    <div
-      className="w-full max-w-[1920px] mx-auto p-3 sm:p-6 lg:px-8 transition-transform duration-150 ease-out"
-      style={{
-        transform: isDraggingDown ? `translateY(${Math.min(dragOffsetY, 120)}px)` : 'none',
-        opacity: isDraggingDown ? Math.max(0.5, 1 - dragOffsetY / 300) : 1,
-      }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Top Mobile & Desktop Swipe-down minimize bar */}
-      <div className="flex items-center justify-between pb-2 mb-1 text-gray-600 dark:text-gray-400 select-none">
+    <div className="w-full max-w-[1920px] mx-auto p-3 sm:p-6 lg:px-8">
+      {/* Top Drag Handle & Minimize Bar (touch drag is isolated here, won't trigger while scrolling content) */}
+      <div
+        id="watch-drag-handle-bar"
+        onTouchStart={handleTopDragStart}
+        onTouchMove={handleTopDragMove}
+        onTouchEnd={handleTopDragEnd}
+        className="flex items-center justify-between py-2 px-3 mb-2 text-gray-600 dark:text-gray-400 select-none bg-gray-100/70 dark:bg-[#1c1c1c]/80 backdrop-blur-md rounded-2xl border border-gray-200/60 dark:border-[#2b2b2b] transition-all"
+        style={{
+          transform: isDraggingDown ? `translateY(${Math.min(dragOffsetY, 80)}px)` : 'none',
+          boxShadow: isDraggingDown ? '0 10px 25px -5px rgba(0,0,0,0.3)' : 'none',
+        }}
+      >
         <button
           id="watch-minimize-to-popup-btn"
           onClick={minimizeWatchToPopUp}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 dark:bg-[#222] hover:bg-gray-200 dark:hover:bg-[#333] text-gray-800 dark:text-gray-200 text-xs font-semibold transition-all shadow-xs active:scale-95 group cursor-pointer"
-          title="Minimize to floating pop-up (Swipe down)"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white dark:bg-[#282828] hover:bg-gray-100 dark:hover:bg-[#333] text-gray-800 dark:text-gray-200 text-xs font-semibold transition-all shadow-xs active:scale-95 group cursor-pointer border border-gray-200 dark:border-[#3a3a3a]"
+          title="Minimize to floating pop-up"
         >
           <ChevronDown className="w-4 h-4 text-red-500 group-hover:translate-y-0.5 transition-transform" />
-          <span>Swipe down / Pop-up</span>
+          <span>Tutup / Pop-up</span>
         </button>
 
         {/* Pull handle indicator on mobile */}
         <div
           onClick={minimizeWatchToPopUp}
           className="flex flex-col items-center cursor-pointer group py-1 px-4"
-          title="Click or drag down to pop up"
+          title="Tarik ke bawah atau klik untuk pop up"
         >
-          <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-600 rounded-full group-hover:bg-red-500 transition-colors" />
+          <div
+            className={`w-14 h-1.5 rounded-full transition-all duration-150 ${
+              isDraggingDown ? 'bg-red-500 scale-x-110' : 'bg-gray-300 dark:bg-gray-600 group-hover:bg-red-500'
+            }`}
+          />
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
+            {isDraggingDown ? 'Lepas untuk pop-up' : 'Tarik ke bawah untuk pop-up'}
+          </span>
         </div>
 
-        <span className="text-[11px] text-gray-400 hidden sm:inline-block">
-          Swipe down to pop up
-        </span>
+        <button
+          onClick={minimizeWatchToPopUp}
+          className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hidden sm:flex items-center gap-1 cursor-pointer"
+        >
+          <span>Floating mode</span>
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6">
@@ -308,6 +391,7 @@ export const WatchPage: React.FC = () => {
         <div className="flex-1 min-w-0">
           {/* Integrated SponsorBlock YouTube Player */}
           <YouTubePlayer
+            key={activeVideo.id}
             video={activeVideo}
             settings={sponsorBlockSettings}
             onEnded={handleVideoEnded}
@@ -327,12 +411,12 @@ export const WatchPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <div
                 className="flex items-center gap-3 cursor-pointer group/chan"
-                onClick={() => openChannel(activeVideo.channelTitle, activeVideo.channelAvatar)}
+                onClick={() => openChannel(activeVideo.channelTitle, displayAvatar)}
                 title={`Go to ${activeVideo.channelTitle}'s channel`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={activeVideo.channelAvatar}
+                  src={displayAvatar}
                   alt={activeVideo.channelTitle}
                   className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-[#383838] group-hover/chan:opacity-80 transition-opacity"
                   referrerPolicy="no-referrer"
@@ -349,8 +433,8 @@ export const WatchPage: React.FC = () => {
                       <CheckCircle2 className="w-4 h-4 text-gray-500 fill-gray-400/20" />
                     )}
                   </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {displaySubs} subscribers
+                  <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                    {displaySubs}
                   </span>
                 </div>
               </div>
@@ -423,9 +507,9 @@ export const WatchPage: React.FC = () => {
           {/* Description Card */}
           <div
             id="watch-video-description-card"
-            className="mt-4 p-4 rounded-2xl bg-gray-100/90 dark:bg-[#181818] border border-gray-200/70 dark:border-[#262626] text-xs sm:text-sm text-gray-800 dark:text-gray-200 transition-all cursor-pointer hover:bg-gray-100 dark:hover:bg-[#1d1d1d] shadow-xs"
-            onClick={() => setIsDescExpanded(!isDescExpanded)}
+            className="mt-4 p-4 rounded-2xl bg-gray-100/90 dark:bg-[#181818] border border-gray-200/70 dark:border-[#262626] text-xs sm:text-sm text-gray-800 dark:text-gray-200 transition-all shadow-xs"
           >
+            {/* Header info (views, date, category) */}
             <div className="flex items-center gap-2 font-bold text-gray-900 dark:text-white mb-2.5 flex-wrap">
               <span>{formatViews(displayViews)} views</span>
               <span className="text-gray-400 dark:text-gray-500">•</span>
@@ -437,17 +521,22 @@ export const WatchPage: React.FC = () => {
               )}
             </div>
 
-            <div className={`leading-relaxed whitespace-pre-line break-words text-gray-700 dark:text-gray-300 ${isDescExpanded ? '' : 'line-clamp-3'}`}>
-              {displayDescription || 'Tidak ada deskripsi video.'}
+            {/* Description Body (Full expansion or 3-line clamp) */}
+            <div
+              className={`leading-relaxed whitespace-pre-wrap break-words text-gray-700 dark:text-gray-300 transition-all ${
+                isDescExpanded ? 'max-h-none' : 'line-clamp-3'
+              }`}
+            >
+              {renderDescriptionText(displayDescription)}
             </div>
 
             {/* Tags */}
             {activeVideo.tags && activeVideo.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-gray-200/60 dark:border-[#262626]">
-                {activeVideo.tags.map((tag) => (
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-2.5 border-t border-gray-200/60 dark:border-[#262626]">
+                {Array.from(new Set(activeVideo.tags)).map((tag, idx) => (
                   <span
-                    key={tag}
-                    className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium"
+                    key={`watch-tag-${tag}-${idx}`}
+                    className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
                     }}
@@ -458,25 +547,23 @@ export const WatchPage: React.FC = () => {
               </div>
             )}
 
+            {/* Expand / Collapse Button */}
             <div className="mt-3 flex items-center justify-between pt-1">
               <button
                 id="watch-toggle-desc-btn"
                 type="button"
-                className="text-xs font-bold text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsDescExpanded(!isDescExpanded);
-                }}
+                className="text-xs font-bold text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 transition-colors cursor-pointer py-1"
+                onClick={() => setIsDescExpanded(!isDescExpanded)}
               >
                 {isDescExpanded ? (
                   <>
                     <span>Tampilkan lebih sedikit</span>
-                    <ChevronUp className="w-3.5 h-3.5" />
+                    <ChevronUp className="w-4 h-4" />
                   </>
                 ) : (
                   <>
-                    <span>Tampilkan lebih banyak</span>
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Tampilkan lebih banyak / Selengkapnya</span>
+                    <ChevronDown className="w-4 h-4" />
                   </>
                 )}
               </button>
@@ -518,9 +605,9 @@ export const WatchPage: React.FC = () => {
                 <span>Loading recommended videos...</span>
               </div>
             )}
-            {relatedVideos.map((video) => (
+            {relatedVideos.map((video, idx) => (
               <RelatedVideoRow
-                key={video.id}
+                key={`related-${video.id}-${idx}`}
                 video={video}
                 onPlay={handlePlayRelated}
                 onOpenChannel={(title, avatar) => openChannel(title, avatar)}
