@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     let html = '';
     try {
-      const res = await fetch(targetUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(4000) });
+      const res = await fetch(targetUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(4000), cache: 'no-store' });
       if (res.ok) {
         html = await res.text();
       }
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       try {
         const searchRes = await fetch(
           `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAg%253D%253D`,
-          { headers: fetchHeaders, signal: AbortSignal.timeout(4000) }
+          { headers: fetchHeaders, signal: AbortSignal.timeout(4000), cache: 'no-store' }
         );
         if (searchRes.ok) {
           html = await searchRes.text();
@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
             const followRes = await fetch(`https://www.youtube.com/@${channelHandleMatch[1]}`, {
               headers: fetchHeaders,
               signal: AbortSignal.timeout(4000),
+              cache: 'no-store',
             });
             if (followRes.ok) {
               html = await followRes.text();
