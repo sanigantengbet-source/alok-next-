@@ -24,6 +24,9 @@ export const FloatingMiniPlayer: React.FC = () => {
   const [isHovered, setIsHovered] = useState(false);
   const [progress, setProgress] = useState(35);
 
+  // Store the initial seek timestamp once on mount so the iframe src never reloads every second
+  const [initialStartSec] = useState<number>(() => Math.max(0, Math.floor(playerCurrentTime || 0)));
+
   // Keep playerCurrentTime advancing while miniplayer is actively playing
   useEffect(() => {
     if (!activeVideo || currentView === 'watch' || isMiniPlayerDismissed || !isPlayerPlaying) {
@@ -47,7 +50,7 @@ export const FloatingMiniPlayer: React.FC = () => {
     return null;
   }
 
-  const startSec = Math.max(0, Math.floor(playerCurrentTime || 0));
+  const staticEmbedSrc = `https://www.youtube-nocookie.com/embed/${activeVideo.youtubeId}?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&start=${initialStartSec}&origin=${typeof window !== 'undefined' ? encodeURIComponent(window.location.origin) : ''}`;
 
   const calculatedProgress =
     playerDuration > 0
@@ -71,9 +74,9 @@ export const FloatingMiniPlayer: React.FC = () => {
       >
         {isPlayerPlaying ? (
           <iframe
-            src={`https://www.youtube.com/embed/${activeVideo.youtubeId}?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&start=${startSec}`}
+            src={staticEmbedSrc}
             title={displayTitle || activeVideo.title}
-            className="w-full h-full pointer-events-none object-cover"
+            className="w-full h-full pointer-events-none object-cover border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
         ) : (
