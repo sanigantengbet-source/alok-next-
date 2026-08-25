@@ -59,7 +59,7 @@ export default function Home() {
       </div>
 
       {/* Floating Picture-in-Picture Miniplayer (When navigating to search/browse other videos while playing) */}
-      <FloatingMiniPlayer />
+      <FloatingMiniPlayer key={activeVideo?.id || 'mini'} />
 
       {/* Mobile Bottom Navigation Bar (hidden on desktop) */}
       <BottomNav />
